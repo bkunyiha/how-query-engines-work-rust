@@ -1,0 +1,63 @@
+# rquery — workspace manifest
+#
+# Faithful Rust port of `kquery`, the Kotlin query engine from Andy Grove's
+# "How Query Engines Work" (2nd edition). See README.md for the full context.
+#
+# Workspace decisions are documented in `ARCHITECTURE.md` §1 and §8 (definition of done).
+
+[workspace]
+resolver = "2"
+# 15 crates, mirroring the upstream kquery Gradle modules 1:1.
+# Build order (per ARCHITECTURE.md §4.5) matches the listing order below.
+members = [
+    "datatypes",
+    "datasource",
+    "logical-plan",
+    "sql",
+    "optimizer",
+    "physical-plan",
+    "query-planner",
+    "execution",
+    "fuzzer",
+    "examples",
+    "benchmarks",
+    "protobuf",
+    "flight-server",
+    "client",
+    "distributed",
+]
+
+[workspace.package]
+edition       = "2024"
+license       = "Apache-2.0"
+version       = "0.1.0"
+repository    = "https://github.com/bkunyiha/how-query-engines-work-rust"   # update before `git remote add`
+authors       = ["Bill Kunyiha <bkunyiha@gmail.com>"]
+rust-version  = "1.85"
+
+[workspace.dependencies]
+# arrow-rs and parquet — pin the major; let cargo update the minor.
+arrow         = "55"
+arrow-array   = "55"
+arrow-schema  = "55"
+arrow-flight  = "55"
+parquet       = "55"
+
+# RPC and serialisation — needed only by protobuf / flight-server / client / distributed.
+prost         = "0.13"
+tonic         = "0.12"
+
+# SQL parser — DO NOT enable yet. Per ARCHITECTURE.md §4.6, the Pratt parser is
+# hand-ported in the `sql` crate; a `sqlparser-rs` swap is reserved for a future rewrite.
+# sqlparser   = "0.50"
+
+# Error handling — minimal in this faithful port per ARCHITECTURE.md §3.6 (panic!()/unwrap() are acceptable).
+anyhow        = "1"
+thiserror     = "1"
+
+# Logging
+log           = "0.4"
+env_logger    = "0.11"
+
+# Testing helpers
+pretty_assertions = "1"

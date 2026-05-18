@@ -1,0 +1,12 @@
+[package]
+name         = "fuzzer"
+description  = "Random query generator for differential testing. Rust port of kquery/fuzzer."
+edition.workspace      = true
+license.workspace      = true
+version.workspace      = true
+authors.workspace      = true
+rust-version.workspace = true
+
+[dependencies]
+logical-plan = { path = "../logical-plan" }
+sql          = { path = "../sql" }

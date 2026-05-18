@@ -1,0 +1,7 @@
+# testdata/
+
+Test data fixtures for the RQuery workspace. Copy verbatim from upstream `kquery/testdata` as needed during Phase 2.
+
+Files are typically small CSV / Parquet samples used by per-crate tests. Larger benchmark inputs (NYC taxi 2019-12, TPC-H data) are NOT checked in — see the Plan §4.8 testing strategy and the per-bench README under `../benchmarks/`.
+
+When adding fixtures here, prefer the smallest representative slice that exercises the test. Anything over ~100 KB should be downloaded at test-run time, not committed.

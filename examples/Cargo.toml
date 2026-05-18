@@ -1,0 +1,30 @@
+[package]
+name         = "examples"
+description  = "Worked examples — NYCTaxi, ParallelQuery, etc. Rust port of kquery/examples."
+edition.workspace      = true
+license.workspace      = true
+version.workspace      = true
+authors.workspace      = true
+rust-version.workspace = true
+
+[dependencies]
+execution = { path = "../execution" }
+log              = { workspace = true }
+env_logger       = { workspace = true }
+anyhow           = { workspace = true }
+
+[[bin]]
+name = "nyc_taxi"
+path = "src/bin/nyc_taxi.rs"
+
+[[bin]]
+name = "parallel_query"
+path = "src/bin/parallel_query.rs"
+
+[[bin]]
+name = "parallel_execution_example"
+path = "src/bin/parallel_execution_example.rs"
+
+[[bin]]
+name = "distributed_example"
+path = "src/bin/distributed_example.rs"

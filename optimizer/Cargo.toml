@@ -1,0 +1,11 @@
+[package]
+name         = "optimizer"
+description  = "Logical optimisation rules: ProjectionPushDown, etc. Rust port of kquery/optimizer."
+edition.workspace      = true
+license.workspace      = true
+version.workspace      = true
+authors.workspace      = true
+rust-version.workspace = true
+
+[dependencies]
+logical-plan = { path = "../logical-plan" }

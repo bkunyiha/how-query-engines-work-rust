@@ -1,0 +1,34 @@
+[package]
+name         = "flight-server"
+description  = "Arrow Flight server exposing the query engine over gRPC. Rust port of kquery/flight-server."
+edition.workspace      = true
+license.workspace      = true
+version.workspace      = true
+authors.workspace      = true
+rust-version.workspace = true
+
+[dependencies]
+# External — Arrow Flight runs on tonic (async gRPC).
+arrow            = { workspace = true }
+arrow-flight     = { workspace = true }
+tonic            = { workspace = true }
+
+# Internal — eight siblings, matching the upstream Kotlin flight-server/build.gradle.kts
+# dependency graph. Verified against the kquery source per
+# ../ARCHITECTURE.md §1.4 (empirical findings table).
+datatypes      = { path = "../datatypes" }
+datasource     = { path = "../datasource" }
+logical-plan   = { path = "../logical-plan" }
+physical-plan  = { path = "../physical-plan" }
+query-planner  = { path = "../query-planner" }
+sql            = { path = "../sql" }
+protobuf       = { path = "../protobuf" }
+execution      = { path = "../execution" }
+
+log              = { workspace = true }
+env_logger       = { workspace = true }
+anyhow           = { workspace = true }
+
+[[bin]]
+name         = "flight-server"
+path = "src/bin/flight_server.rs"

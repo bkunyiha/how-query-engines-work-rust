@@ -1,0 +1,24 @@
+[package]
+name         = "client"
+description  = "Flight client wrapper. Rust port of kquery/client."
+edition.workspace      = true
+license.workspace      = true
+version.workspace      = true
+authors.workspace      = true
+rust-version.workspace = true
+
+[dependencies]
+# External — the Arrow Flight client; communication with the Flight server
+# is over the wire (not via the in-workspace `flight-server` crate).
+arrow                = { workspace = true }
+arrow-flight         = { workspace = true }
+tonic                = { workspace = true }
+
+# Internal — four siblings, matching the upstream Kotlin client/build.gradle.kts
+# dependency graph. Notably no `flight-server` dependency: the protocol contract
+# lives in the serialised protobuf bytes, not in shared Rust types. Verified
+# against the kquery source per ../ARCHITECTURE.md §1.4 (empirical findings table).
+datatypes    = { path = "../datatypes" }
+datasource   = { path = "../datasource" }
+logical-plan = { path = "../logical-plan" }
+protobuf     = { path = "../protobuf" }

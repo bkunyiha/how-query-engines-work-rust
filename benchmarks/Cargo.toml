@@ -1,0 +1,22 @@
+[package]
+name         = "benchmarks"
+description  = "TPC-H runner and NYC taxi benchmark. Rust port of kquery/benchmarks."
+edition.workspace      = true
+license.workspace      = true
+version.workspace      = true
+authors.workspace      = true
+rust-version.workspace = true
+
+[dependencies]
+execution = { path = "../execution" }
+anyhow           = { workspace = true }
+log              = { workspace = true }
+env_logger       = { workspace = true }
+
+[[bin]]
+name = "tpch_runner"
+path = "src/bin/tpch_runner.rs"
+
+[[bin]]
+name = "benchmarks"
+path = "src/bin/benchmarks.rs"

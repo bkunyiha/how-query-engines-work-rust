@@ -1,0 +1,36 @@
+# Rust build artefacts
+/target
+**/*.rs.bk
+Cargo.lock.bak
+
+# Note: Cargo.lock IS committed for binary crates. This workspace has binary crates
+# (flight-server, benchmarks, examples), so Cargo.lock should be committed.
+# If this becomes a library-only workspace, uncomment the next line:
+# Cargo.lock
+
+# IDE / editor
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+.zed/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test output / scratch
+*.tmp
+*.log
+/tmp/
+/scratch/
+
+# Generated docs
+/target/doc
+
+# Profiling
+*.profraw
+*.profdata
+perf.data*
+flamegraph.svg

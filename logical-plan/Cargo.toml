@@ -1,0 +1,12 @@
+[package]
+name         = "logical-plan"
+description  = "LogicalPlan, LogicalExpr, DataFrame. Rust port of kquery/logical-plan."
+edition.workspace      = true
+license.workspace      = true
+version.workspace      = true
+authors.workspace      = true
+rust-version.workspace = true
+
+[dependencies]
+arrow        = { workspace = true }
+datatypes = { path = "../datatypes" }

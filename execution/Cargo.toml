@@ -1,0 +1,16 @@
+[package]
+name         = "execution"
+description  = "ExecutionContext + ParallelContext. The runtime entry point. Rust port of kquery/execution."
+edition.workspace      = true
+license.workspace      = true
+version.workspace      = true
+authors.workspace      = true
+rust-version.workspace = true
+
+[dependencies]
+arrow                 = { workspace = true }
+logical-plan   = { path = "../logical-plan" }
+physical-plan  = { path = "../physical-plan" }
+query-planner  = { path = "../query-planner" }
+optimizer      = { path = "../optimizer" }
+datasource     = { path = "../datasource" }

@@ -1,0 +1,27 @@
+[package]
+name         = "distributed"
+description  = "Distributed query execution: scheduler, query stages, distributed planner. Rust port of kquery/distributed."
+edition.workspace      = true
+license.workspace      = true
+version.workspace      = true
+authors.workspace      = true
+rust-version.workspace = true
+
+[dependencies]
+# External — Arrow Flight client is the wire-level transport for sending tasks
+# to remote executors. No in-process dependency on `flight-server` or `client`.
+arrow            = { workspace = true }
+arrow-flight     = { workspace = true }
+
+# Internal — nine siblings, matching the upstream Kotlin distributed/build.gradle.kts
+# dependency graph. Verified against the kquery source per
+# ../ARCHITECTURE.md §1.4 (empirical findings table).
+datatypes      = { path = "../datatypes" }
+datasource     = { path = "../datasource" }
+logical-plan   = { path = "../logical-plan" }
+physical-plan  = { path = "../physical-plan" }
+query-planner  = { path = "../query-planner" }
+optimizer      = { path = "../optimizer" }
+execution      = { path = "../execution" }
+sql            = { path = "../sql" }
+protobuf       = { path = "../protobuf" }

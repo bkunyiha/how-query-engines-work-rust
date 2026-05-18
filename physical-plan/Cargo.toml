@@ -1,0 +1,14 @@
+[package]
+name         = "physical-plan"
+description  = "PhysicalPlan, *Exec operators, physical Expression types, shuffle/task. Rust port of kquery/physical-plan."
+edition.workspace      = true
+license.workspace      = true
+version.workspace      = true
+authors.workspace      = true
+rust-version.workspace = true
+
+[dependencies]
+arrow                = { workspace = true }
+datatypes     = { path = "../datatypes" }
+datasource    = { path = "../datasource" }
+logical-plan  = { path = "../logical-plan" }

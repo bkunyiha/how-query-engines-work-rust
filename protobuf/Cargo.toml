@@ -1,0 +1,17 @@
+[package]
+name         = "protobuf"
+description  = "PhysicalPlan / LogicalExpr / Action protobuf serialization. Rust port of kquery/protobuf."
+edition.workspace      = true
+license.workspace      = true
+version.workspace      = true
+authors.workspace      = true
+rust-version.workspace = true
+build        = "build.rs"
+
+[dependencies]
+prost                = { workspace = true }
+tonic                = { workspace = true }
+physical-plan = { path = "../physical-plan" }
+
+[build-dependencies]
+tonic-build = "0.12"
