@@ -1,7 +1,7 @@
 //! # distributed
 //!
 //! Distributed execution layer — scheduler, query-stage decomposition,
-//! distributed planner. The "minimal Ballista" example in Plan §10 chapter 12.
+//! distributed planner. The "minimal Ballista" example (book chapter 12).
 //!
 //! ## Kotlin source
 //! Faithful port of `kquery/distributed/src/main/kotlin/io/`:

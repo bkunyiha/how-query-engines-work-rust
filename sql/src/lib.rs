@@ -8,7 +8,7 @@
 //! `Expressions.kt`.
 //!
 //! ## ⚠ Design directive
-//! **DO NOT replace the Pratt parser with `sqlparser-rs`.** Per Plan §3.6, the
+//! **DO NOT replace the Pratt parser with `sqlparser-rs`.** The
 //! hand-port is the pedagogical core of this module. Swapping in sqlparser-rs
 //! is a Phase 2 (`fdapquery`) decision, not a Phase 1 one.
 //!

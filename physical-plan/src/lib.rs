@@ -16,7 +16,7 @@
 //! - **Shuffle / task:** `AggregateMode.kt`, `Action.kt`, `Task.kt`,
 //!   `ShuffleLocation.kt`, `ShuffleManager.kt`
 //!
-//! Largest module in the workspace. Plan §1.4: keep each generated file under
+//! Largest module in the workspace. Keep each generated file under
 //! 25 lines of executable code where possible — split at function boundaries.
 //!
 //! ## Status

@@ -6,5 +6,5 @@
 //! `DistributedExample.kt`.
 //!
 //! ## Definition-of-done relevance
-//! Per Plan §3.9, `cargo run --example nyc_taxi` must produce output matching
+//! `cargo run --example nyc_taxi` must produce output matching
 //! the Kotlin reference within rounding tolerance.

@@ -1,6 +1,127 @@
 //! Port of `kquery/datatypes/src/main/kotlin/RecordBatch.kt`.
 //!
-//! TODO: port from upstream Kotlin. See [`ARCHITECTURE.md`] §4 for the per-module
-//! porting plan and §3 for the Kotlin → Rust idiom cheatsheet.
+//! Batch of data organised in columns.
 //!
-//! [`ARCHITECTURE.md`]: ../../ARCHITECTURE.md
+//! Translation notes:
+//! - **Do not reinvent `RecordBatch`.** arrow-rs already provides
+//!   `arrow_array::RecordBatch`, with the same semantics as the Kotlin wrapper
+//!   (immutable batch of columns sharing a schema). We re-export the arrow-rs
+//!   type rather than wrapping it.
+//! - **Kotlin-style helpers** (`row_count`, `column_count`, `field(i)`,
+//!   `to_csv`) are provided as a free-function or extension-style helper
+//!   module on top of arrow-rs's type. The names mirror the Kotlin methods.
+//! - **`close()` is dropped** — arrow-rs's `RecordBatch` is `Arc`-backed and
+//!   self-releasing.
+
+use crate::scalar_value::ScalarValue;
+use crate::{arrow_field_vector::ArrowFieldVector, column_vector::ColumnVector};
+
+/// Re-export of arrow-rs's `RecordBatch`. This *is* the type the engine
+/// uses end-to-end; there is no Rust-side wrapper struct.
+pub use arrow_array::RecordBatch;
+
+/// Number of rows in the batch.
+///
+/// Kotlin: `RecordBatch.rowCount()`.
+pub fn row_count(batch: &RecordBatch) -> usize {
+    batch.num_rows()
+}
+
+/// Number of columns in the batch.
+///
+/// Kotlin: `RecordBatch.columnCount()`.
+pub fn column_count(batch: &RecordBatch) -> usize {
+    batch.num_columns()
+}
+
+/// Access one column by index, returning it as a [`ColumnVector`].
+///
+/// Kotlin: `RecordBatch.field(i)` (returns `ColumnVector`). The Rust version
+/// allocates a new [`ArrowFieldVector`] wrapper around the existing
+/// `ArrayRef` — cheap because `ArrayRef` is `Arc<dyn Array>` and is cloned
+/// by reference.
+pub fn field(batch: &RecordBatch, i: usize) -> ArrowFieldVector {
+    ArrowFieldVector::new(batch.column(i).clone())
+}
+
+/// Render the batch as CSV, one row per line, comma-separated values.
+/// Useful for tests and debugging. Matches the Kotlin `toCSV()` method.
+pub fn to_csv(batch: &RecordBatch) -> String {
+    let mut out = String::new();
+    let rows = batch.num_rows();
+    let cols = batch.num_columns();
+
+    for row_index in 0..rows {
+        for col_index in 0..cols {
+            if col_index > 0 {
+                out.push(',');
+            }
+            // Wrap each column as an ArrowFieldVector so we can use the
+            // ColumnVector trait's get_value method — same path the rest of
+            // the engine uses.
+            let v = ArrowFieldVector::new(batch.column(col_index).clone());
+            let value = v.get_value(row_index);
+            match value {
+                ScalarValue::Null     => out.push_str("null"),
+                ScalarValue::Boolean(b) => out.push_str(&b.to_string()),
+                ScalarValue::Int8(n)  => out.push_str(&n.to_string()),
+                ScalarValue::Int16(n) => out.push_str(&n.to_string()),
+                ScalarValue::Int32(n) => out.push_str(&n.to_string()),
+                ScalarValue::Int64(n) => out.push_str(&n.to_string()),
+                ScalarValue::UInt8(n)  => out.push_str(&n.to_string()),
+                ScalarValue::UInt16(n) => out.push_str(&n.to_string()),
+                ScalarValue::UInt32(n) => out.push_str(&n.to_string()),
+                ScalarValue::UInt64(n) => out.push_str(&n.to_string()),
+                ScalarValue::Float32(n) => out.push_str(&n.to_string()),
+                ScalarValue::Float64(n) => out.push_str(&n.to_string()),
+                ScalarValue::Utf8(s)   => out.push_str(&s),
+                ScalarValue::Binary(b) => out.push_str(&String::from_utf8_lossy(&b)),
+                ScalarValue::Date32(d) => out.push_str(&d.to_string()),
+            }
+        }
+        out.push('\n');
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::arrow_types::{INT32_TYPE, STRING_TYPE};
+    use arrow_array::{ArrayRef, Int32Array, StringArray};
+    use arrow_schema::{Field as ArrowField, Schema as ArrowSchema};
+    use std::sync::Arc;
+
+    fn sample_batch() -> RecordBatch {
+        let schema = Arc::new(ArrowSchema::new(vec![
+            ArrowField::new("id",   INT32_TYPE, false),
+            ArrowField::new("name", STRING_TYPE, false),
+        ]));
+        let id:   ArrayRef = Arc::new(Int32Array::from(vec![1, 2, 3]));
+        let name: ArrayRef = Arc::new(StringArray::from(vec!["a", "b", "c"]));
+        RecordBatch::try_new(schema, vec![id, name]).unwrap()
+    }
+
+    #[test]
+    fn row_and_column_counts() {
+        let b = sample_batch();
+        assert_eq!(row_count(&b),    3);
+        assert_eq!(column_count(&b), 2);
+    }
+
+    #[test]
+    fn field_by_index_round_trips() {
+        let b = sample_batch();
+        let id = field(&b, 0);
+        assert_eq!(id.get_value(0), ScalarValue::Int32(1));
+        let name = field(&b, 1);
+        assert_eq!(name.get_value(2), ScalarValue::Utf8("c".to_string()));
+    }
+
+    #[test]
+    fn csv_round_trip() {
+        let b = sample_batch();
+        let csv = to_csv(&b);
+        assert_eq!(csv, "1,a\n2,b\n3,c\n");
+    }
+}
