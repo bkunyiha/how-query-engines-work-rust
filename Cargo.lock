@@ -605,6 +605,8 @@ name = "datasource"
 version = "0.1.0"
 dependencies = [
  "arrow",
+ "arrow-array",
+ "arrow-schema",
  "datatypes",
  "parquet",
 ]
