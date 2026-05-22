@@ -8,5 +8,6 @@ authors.workspace      = true
 rust-version.workspace = true
 
 [dependencies]
-arrow        = { workspace = true }
-datatypes = { path = "../datatypes" }
+arrow-schema = { workspace = true }
+datatypes  = { path = "../datatypes" }
+datasource = { path = "../datasource" }
