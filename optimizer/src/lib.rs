@@ -13,7 +13,8 @@
 //!   cost-based ordering is a Phase 2 / DataFusion-territory concern).
 //!
 //! ## Status
-//! TODO — module 5 of 15.
+//! Module 5 of 15 — ported. Both Kotlin source files have Rust equivalents, and
+//! the `OptimizerTest` suite is ported as a `#[cfg(test)]` module.
 
 // ==============================================================
 // Per-file modules — one for each upstream Kotlin source file.
