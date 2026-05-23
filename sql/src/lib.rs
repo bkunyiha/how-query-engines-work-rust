@@ -3,9 +3,9 @@
 //! Hand-ported Pratt parser and SQL → LogicalPlan compiler.
 //!
 //! ## Kotlin source
-//! Faithful port of `kquery/sql/src/main/kotlin/`:
-//! `SqlTokenizer.kt`, `PrattParser.kt`, `SqlParser.kt`, `SqlPlanner.kt`,
-//! `Expressions.kt`.
+//! Faithful port of `kquery/sql/src/main/kotlin/`: `Tokens.kt`,
+//! `SqlTokenizer.kt`, `TokenStream.kt`, `PrattParser.kt`, `SqlParser.kt`,
+//! `Expressions.kt` (the SQL AST), `SqlPlanner.kt`.
 //!
 //! ## ⚠ Design directive
 //! **DO NOT replace the Pratt parser with `sqlparser-rs`.** The
@@ -13,7 +13,9 @@
 //! is a Phase 2 (`fdapquery`) decision, not a Phase 1 one.
 //!
 //! ## Status
-//! TODO — module 4 of 15.
+//! Module 4 of 15 — ported. All 7 Kotlin source files have Rust equivalents,
+//! with the tokenizer / parser / planner test suites ported as `#[cfg(test)]`
+//! modules.
 
 // ==============================================================
 // Per-file modules — one for each upstream Kotlin source file.

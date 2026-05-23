@@ -8,8 +8,13 @@ authors.workspace      = true
 rust-version.workspace = true
 
 [dependencies]
+arrow-schema = { workspace = true }
 datatypes   = { path = "../datatypes" }
 logical-plan = { path = "../logical-plan" }
 
 # Per Plan §3.6: do NOT swap in sqlparser-rs. The Pratt parser is the pedagogical
 # core of this module. sqlparser-rs is reserved for Phase 2 (`fdapquery`).
+
+[dev-dependencies]
+# Used only by SqlPlannerTest, which builds a Scan over a CsvDataSource.
+datasource = { path = "../datasource" }

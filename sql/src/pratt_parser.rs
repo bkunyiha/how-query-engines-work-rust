@@ -1,3 +1,41 @@
 //! Port of `kquery/sql/src/main/kotlin/PrattParser.kt`.
 //!
-//! TODO: port from the upstream Kotlin source.
+//! The Pratt (Top-Down Operator Precedence) parsing loop. See
+//! <https://tdop.github.io/> for Pratt's original paper.
+//!
+//! Kotlin models this as an `interface` with one default method (`parse`) and
+//! three abstract hooks (`nextPrecedence`, `parsePrefix`, `parseInfix`). The
+//! Rust port is the direct analogue: a trait with a provided `parse` method and
+//! three required methods. Rust traits have no default *arguments*, so Kotlin's
+//! `parse(precedence: Int = 0)` becomes `parse(&mut self, precedence: i32)` and
+//! callers pass `0` explicitly.
+
+use crate::expressions::SqlExpr;
+
+/// A Pratt parser. Kotlin: `interface PrattParser`.
+pub trait PrattParser {
+    /// Parse an expression, consuming infix operators that bind tighter than
+    /// `precedence`. Kotlin: `parse(precedence: Int = 0)`.
+    fn parse(&mut self, precedence: i32) -> Option<SqlExpr> {
+        let mut expr = self.parse_prefix()?;
+        while precedence < self.next_precedence() {
+            // Compute the next precedence into a local first: `parse_infix`
+            // borrows `self` mutably, so it can't also take `self.next_precedence()`
+            // as an argument in the same call.
+            let next = self.next_precedence();
+            expr = self.parse_infix(expr, next);
+        }
+        Some(expr)
+    }
+
+    /// Precedence of the next token (0 if none / not an operator). Kotlin:
+    /// `nextPrecedence()`.
+    fn next_precedence(&self) -> i32;
+
+    /// Parse the next prefix expression. Kotlin: `parsePrefix()`.
+    fn parse_prefix(&mut self) -> Option<SqlExpr>;
+
+    /// Parse the next infix expression, given the already-parsed `left`. Kotlin:
+    /// `parseInfix(left, precedence)`.
+    fn parse_infix(&mut self, left: SqlExpr, precedence: i32) -> SqlExpr;
+}
