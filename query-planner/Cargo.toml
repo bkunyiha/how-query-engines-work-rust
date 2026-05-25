@@ -8,5 +8,12 @@ authors.workspace      = true
 rust-version.workspace = true
 
 [dependencies]
+datatypes     = { path = "../datatypes" }
 logical-plan  = { path = "../logical-plan" }
 physical-plan = { path = "../physical-plan" }
+
+[dev-dependencies]
+# The QueryPlanner test builds a logical plan, optimizes it, then plans it —
+# so it needs an in-memory data source and the optimizer.
+datasource = { path = "../datasource" }
+optimizer  = { path = "../optimizer" }
