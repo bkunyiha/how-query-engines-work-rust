@@ -13,8 +13,12 @@
 //! - **`close()` is dropped** — arrow-rs's `RecordBatch` is `Arc`-backed and
 //!   self-releasing.
 
+use crate::arrow_vector_builder::ArrowVectorBuilder;
 use crate::scalar_value::ScalarValue;
+use crate::schema::Schema;
 use crate::{arrow_field_vector::ArrowFieldVector, column_vector::ColumnVector};
+use arrow_array::ArrayRef;
+use std::sync::Arc;
 
 /// Re-export of arrow-rs's `RecordBatch`. This *is* the type the engine
 /// uses end-to-end; there is no Rust-side wrapper struct.
@@ -42,6 +46,42 @@ pub fn column_count(batch: &RecordBatch) -> usize {
 /// by reference.
 pub fn field(batch: &RecordBatch, i: usize) -> ArrowFieldVector {
     ArrowFieldVector::new(batch.column(i).clone())
+}
+
+/// Materialize a [`ColumnVector`] into an arrow `ArrayRef` by copying each value
+/// through the typed [`ArrowVectorBuilder`].
+///
+/// Most operator outputs are already [`ArrowFieldVector`]s (which wrap an
+/// `ArrayRef`), but *virtual* columns — [`crate::LiteralValueVector`] and the
+/// coercion wrappers in the physical-plan crate — have no backing array. arrow's
+/// `RecordBatch` stores `ArrayRef`s, so building one from evaluated columns means
+/// materializing every column uniformly. (A future rewrite could fast-path the
+/// already-materialized case via a downcast; this faithful port keeps it simple.)
+pub fn column_to_array(col: &dyn ColumnVector) -> ArrayRef {
+    let mut builder = ArrowVectorBuilder::new(&col.get_type(), col.size());
+    for i in 0..col.size() {
+        builder.append_value(&col.get_value(i));
+    }
+    builder.build().field
+}
+
+/// Build a [`RecordBatch`] from a [`Schema`] and a set of evaluated columns.
+///
+/// This is the Rust counterpart of Kotlin's secondary constructor
+/// `RecordBatch(schema: Schema, fields: List<ColumnVector>)`. Because the Rust
+/// port re-exports arrow's `RecordBatch` (which holds `ArrayRef`s rather than
+/// `ColumnVector`s — see the file-level note), each column is materialized via
+/// [`column_to_array`] and the `Schema` is converted with [`Schema::to_arrow`].
+/// Panics if the columns don't match the schema, matching the engine's
+/// panic-on-invalid-state convention.
+pub fn create(schema: &Schema, columns: Vec<Box<dyn ColumnVector>>) -> RecordBatch {
+    let arrays: Vec<ArrayRef> = columns
+        .iter()
+        .map(|c| column_to_array(c.as_ref()))
+        .collect();
+    let arrow_schema = Arc::new(schema.to_arrow());
+    RecordBatch::try_new(arrow_schema, arrays)
+        .unwrap_or_else(|e| panic!("record_batch::create: {e}"))
 }
 
 /// Render the batch as CSV, one row per line, comma-separated values.
@@ -123,5 +163,33 @@ mod tests {
         let b = sample_batch();
         let csv = to_csv(&b);
         assert_eq!(csv, "1,a\n2,b\n3,c\n");
+    }
+
+    #[test]
+    fn create_materializes_columns_including_a_literal() {
+        use crate::literal_value_vector::LiteralValueVector;
+        use crate::Field;
+
+        // One real column (id) and one *virtual* literal column — the literal has
+        // no backing array, so `create` must materialize it.
+        let id = ArrowFieldVector::new(Arc::new(Int32Array::from(vec![1, 2, 3])));
+        let lit = LiteralValueVector::new(INT32_TYPE, ScalarValue::Int32(7), 3);
+        let schema = Schema::new(vec![
+            Field::new("id", INT32_TYPE),
+            Field::new("seven", INT32_TYPE),
+        ]);
+
+        let batch = create(
+            &schema,
+            vec![Box::new(id), Box::new(lit)],
+        );
+
+        assert_eq!(row_count(&batch), 3);
+        assert_eq!(column_count(&batch), 2);
+        assert_eq!(field(&batch, 0).get_value(2), ScalarValue::Int32(3));
+        // every row of the literal column materialized to 7
+        for i in 0..3 {
+            assert_eq!(field(&batch, 1).get_value(i), ScalarValue::Int32(7));
+        }
     }
 }

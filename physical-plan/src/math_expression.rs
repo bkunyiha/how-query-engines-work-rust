@@ -1,3 +1,309 @@
-//! Port of `kquery/physical-plan/src/main/kotlin/MathExpression.kt`.
+//! Port of `kquery/physical-plan/src/main/kotlin/expressions/MathExpression.kt`.
 //!
-//! TODO: port from the upstream Kotlin source.
+//! Arithmetic binary operators: `+`, `-`, `*`, `/`. In Kotlin these form a
+//! three-level hierarchy — `BinaryExpression` (evaluate both sides + coerce)
+//! → `MathExpression` (build an output vector by evaluating each cell)
+//! → `AddExpression` / `SubtractExpression` / … (the per-cell arithmetic).
+//!
+//! ## Translation note — three-level template method
+//! [`MathExpression`] is a sub-trait of [`BinaryExpression`] that adds the per-cell
+//! kernel [`MathExpression::evaluate_cell`]. The middle layer's "build a vector by
+//! looping over cells" logic lives in the shared helper [`math_evaluate_pair`]
+//! rather than as a `BinaryExpression::evaluate_pair` default, because Rust does
+//! not let a sub-trait provide a default body for a super-trait's required method.
+//! Each concrete operator therefore wires the three layers together with three
+//! small impls (`MathExpression`, `BinaryExpression`, `Expression`) — verbose, but
+//! it makes the template-method structure explicit and faithful to the Kotlin.
+//!
+//! ## Translation note — integer overflow
+//! The JVM's integer `+`/`-`/`*` wrap silently on overflow (two's complement).
+//! Rust's `+` panics on overflow in debug builds, so the integer arms use
+//! `wrapping_add`/`wrapping_sub`/`wrapping_mul` to reproduce the JVM semantics
+//! exactly. Floating-point arithmetic and integer division use the plain
+//! operators (division by zero panics in both languages).
+
+use crate::binary_expression::BinaryExpression;
+use crate::expressions::{as_f32, as_f64, as_i16, as_i32, as_i64, as_i8, Expression};
+use arrow_schema::DataType;
+use datatypes::{ArrowVectorBuilder, ColumnVector, RecordBatch, ScalarValue};
+use std::fmt;
+use std::sync::Arc;
+
+/// An arithmetic binary expression. Kotlin `abstract class MathExpression`.
+pub trait MathExpression: BinaryExpression {
+    /// Compute one output cell from the two input cells and their (shared) type.
+    /// Kotlin: the abstract `evaluate(l: Any?, r: Any?, arrowType: ArrowType): Any?`.
+    fn evaluate_cell(&self, l: &ScalarValue, r: &ScalarValue, arrow_type: &DataType)
+        -> ScalarValue;
+}
+
+/// Build an output column the same type as the left input by evaluating the
+/// operator cell-by-cell. Kotlin: `MathExpression.evaluate(l, r)`.
+///
+/// Walking the column one cell at a time (rather than reaching for an
+/// `arrow::compute` arithmetic kernel) is deliberate — see ARCHITECTURE.md §4.6.
+/// It is what teaches how the operator works at the value level.
+pub(crate) fn math_evaluate_pair<M: MathExpression + ?Sized>(
+    m: &M,
+    l: &dyn ColumnVector,
+    r: &dyn ColumnVector,
+) -> Box<dyn ColumnVector> {
+    let arrow_type = l.get_type();
+    let mut builder = ArrowVectorBuilder::new(&arrow_type, l.size());
+    for i in 0..l.size() {
+        let value = m.evaluate_cell(&l.get_value(i), &r.get_value(i), &arrow_type);
+        builder.append_value(&value);
+    }
+    builder.set_value_count(l.size());
+    Box::new(builder.build())
+}
+
+// ---------------------------------------------------------------------------
+// AddExpression
+// ---------------------------------------------------------------------------
+
+/// `l + r`. Kotlin `AddExpression`.
+pub struct AddExpression {
+    l: Arc<dyn Expression>,
+    r: Arc<dyn Expression>,
+}
+
+impl AddExpression {
+    pub fn new(l: Arc<dyn Expression>, r: Arc<dyn Expression>) -> Self {
+        Self { l, r }
+    }
+}
+
+impl MathExpression for AddExpression {
+    fn evaluate_cell(
+        &self,
+        l: &ScalarValue,
+        r: &ScalarValue,
+        arrow_type: &DataType,
+    ) -> ScalarValue {
+        if l.is_null() || r.is_null() {
+            return ScalarValue::Null;
+        }
+        match arrow_type {
+            DataType::Int8 => ScalarValue::Int8(as_i8(l).wrapping_add(as_i8(r))),
+            DataType::Int16 => ScalarValue::Int16(as_i16(l).wrapping_add(as_i16(r))),
+            DataType::Int32 => ScalarValue::Int32(as_i32(l).wrapping_add(as_i32(r))),
+            DataType::Int64 => ScalarValue::Int64(as_i64(l).wrapping_add(as_i64(r))),
+            DataType::Float32 => ScalarValue::Float32(as_f32(l) + as_f32(r)),
+            DataType::Float64 => ScalarValue::Float64(as_f64(l) + as_f64(r)),
+            other => panic!("Unsupported data type in math expression: {other:?}"),
+        }
+    }
+}
+
+impl BinaryExpression for AddExpression {
+    fn left(&self) -> &Arc<dyn Expression> {
+        &self.l
+    }
+    fn right(&self) -> &Arc<dyn Expression> {
+        &self.r
+    }
+    fn evaluate_pair(&self, l: &dyn ColumnVector, r: &dyn ColumnVector) -> Box<dyn ColumnVector> {
+        math_evaluate_pair(self, l, r)
+    }
+}
+
+impl Expression for AddExpression {
+    fn evaluate(&self, input: &RecordBatch) -> Box<dyn ColumnVector> {
+        self.evaluate_binary(input)
+    }
+}
+
+impl fmt::Display for AddExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}+{}", self.l, self.r)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SubtractExpression
+// ---------------------------------------------------------------------------
+
+/// `l - r`. Kotlin `SubtractExpression`.
+pub struct SubtractExpression {
+    l: Arc<dyn Expression>,
+    r: Arc<dyn Expression>,
+}
+
+impl SubtractExpression {
+    pub fn new(l: Arc<dyn Expression>, r: Arc<dyn Expression>) -> Self {
+        Self { l, r }
+    }
+}
+
+impl MathExpression for SubtractExpression {
+    fn evaluate_cell(
+        &self,
+        l: &ScalarValue,
+        r: &ScalarValue,
+        arrow_type: &DataType,
+    ) -> ScalarValue {
+        if l.is_null() || r.is_null() {
+            return ScalarValue::Null;
+        }
+        match arrow_type {
+            DataType::Int8 => ScalarValue::Int8(as_i8(l).wrapping_sub(as_i8(r))),
+            DataType::Int16 => ScalarValue::Int16(as_i16(l).wrapping_sub(as_i16(r))),
+            DataType::Int32 => ScalarValue::Int32(as_i32(l).wrapping_sub(as_i32(r))),
+            DataType::Int64 => ScalarValue::Int64(as_i64(l).wrapping_sub(as_i64(r))),
+            DataType::Float32 => ScalarValue::Float32(as_f32(l) - as_f32(r)),
+            DataType::Float64 => ScalarValue::Float64(as_f64(l) - as_f64(r)),
+            other => panic!("Unsupported data type in math expression: {other:?}"),
+        }
+    }
+}
+
+impl BinaryExpression for SubtractExpression {
+    fn left(&self) -> &Arc<dyn Expression> {
+        &self.l
+    }
+    fn right(&self) -> &Arc<dyn Expression> {
+        &self.r
+    }
+    fn evaluate_pair(&self, l: &dyn ColumnVector, r: &dyn ColumnVector) -> Box<dyn ColumnVector> {
+        math_evaluate_pair(self, l, r)
+    }
+}
+
+impl Expression for SubtractExpression {
+    fn evaluate(&self, input: &RecordBatch) -> Box<dyn ColumnVector> {
+        self.evaluate_binary(input)
+    }
+}
+
+impl fmt::Display for SubtractExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}-{}", self.l, self.r)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// MultiplyExpression
+// ---------------------------------------------------------------------------
+
+/// `l * r`. Kotlin `MultiplyExpression`.
+pub struct MultiplyExpression {
+    l: Arc<dyn Expression>,
+    r: Arc<dyn Expression>,
+}
+
+impl MultiplyExpression {
+    pub fn new(l: Arc<dyn Expression>, r: Arc<dyn Expression>) -> Self {
+        Self { l, r }
+    }
+}
+
+impl MathExpression for MultiplyExpression {
+    fn evaluate_cell(
+        &self,
+        l: &ScalarValue,
+        r: &ScalarValue,
+        arrow_type: &DataType,
+    ) -> ScalarValue {
+        if l.is_null() || r.is_null() {
+            return ScalarValue::Null;
+        }
+        match arrow_type {
+            DataType::Int8 => ScalarValue::Int8(as_i8(l).wrapping_mul(as_i8(r))),
+            DataType::Int16 => ScalarValue::Int16(as_i16(l).wrapping_mul(as_i16(r))),
+            DataType::Int32 => ScalarValue::Int32(as_i32(l).wrapping_mul(as_i32(r))),
+            DataType::Int64 => ScalarValue::Int64(as_i64(l).wrapping_mul(as_i64(r))),
+            DataType::Float32 => ScalarValue::Float32(as_f32(l) * as_f32(r)),
+            DataType::Float64 => ScalarValue::Float64(as_f64(l) * as_f64(r)),
+            other => panic!("Unsupported data type in math expression: {other:?}"),
+        }
+    }
+}
+
+impl BinaryExpression for MultiplyExpression {
+    fn left(&self) -> &Arc<dyn Expression> {
+        &self.l
+    }
+    fn right(&self) -> &Arc<dyn Expression> {
+        &self.r
+    }
+    fn evaluate_pair(&self, l: &dyn ColumnVector, r: &dyn ColumnVector) -> Box<dyn ColumnVector> {
+        math_evaluate_pair(self, l, r)
+    }
+}
+
+impl Expression for MultiplyExpression {
+    fn evaluate(&self, input: &RecordBatch) -> Box<dyn ColumnVector> {
+        self.evaluate_binary(input)
+    }
+}
+
+impl fmt::Display for MultiplyExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}*{}", self.l, self.r)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DivideExpression
+// ---------------------------------------------------------------------------
+
+/// `l / r`. Kotlin `DivideExpression`. Integer division truncates and division by
+/// zero panics — the same observable behaviour as the JVM original (which throws
+/// `ArithmeticException`).
+pub struct DivideExpression {
+    l: Arc<dyn Expression>,
+    r: Arc<dyn Expression>,
+}
+
+impl DivideExpression {
+    pub fn new(l: Arc<dyn Expression>, r: Arc<dyn Expression>) -> Self {
+        Self { l, r }
+    }
+}
+
+impl MathExpression for DivideExpression {
+    fn evaluate_cell(
+        &self,
+        l: &ScalarValue,
+        r: &ScalarValue,
+        arrow_type: &DataType,
+    ) -> ScalarValue {
+        if l.is_null() || r.is_null() {
+            return ScalarValue::Null;
+        }
+        match arrow_type {
+            DataType::Int8 => ScalarValue::Int8(as_i8(l) / as_i8(r)),
+            DataType::Int16 => ScalarValue::Int16(as_i16(l) / as_i16(r)),
+            DataType::Int32 => ScalarValue::Int32(as_i32(l) / as_i32(r)),
+            DataType::Int64 => ScalarValue::Int64(as_i64(l) / as_i64(r)),
+            DataType::Float32 => ScalarValue::Float32(as_f32(l) / as_f32(r)),
+            DataType::Float64 => ScalarValue::Float64(as_f64(l) / as_f64(r)),
+            other => panic!("Unsupported data type in math expression: {other:?}"),
+        }
+    }
+}
+
+impl BinaryExpression for DivideExpression {
+    fn left(&self) -> &Arc<dyn Expression> {
+        &self.l
+    }
+    fn right(&self) -> &Arc<dyn Expression> {
+        &self.r
+    }
+    fn evaluate_pair(&self, l: &dyn ColumnVector, r: &dyn ColumnVector) -> Box<dyn ColumnVector> {
+        math_evaluate_pair(self, l, r)
+    }
+}
+
+impl Expression for DivideExpression {
+    fn evaluate(&self, input: &RecordBatch) -> Box<dyn ColumnVector> {
+        self.evaluate_binary(input)
+    }
+}
+
+impl fmt::Display for DivideExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}/{}", self.l, self.r)
+    }
+}

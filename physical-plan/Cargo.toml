@@ -8,7 +8,20 @@ authors.workspace      = true
 rust-version.workspace = true
 
 [dependencies]
-arrow                = { workspace = true }
+# We depend on the split arrow-rs crates (arrow-schema, arrow-array) rather than
+# the `arrow` umbrella so the `DataType` we name here is *the same* type the
+# `datatypes` crate exposes (it also depends on the split crates). Mixing the
+# umbrella re-export with the split crates can yield two distinct `DataType`
+# types at different versions and a confusing "expected DataType, found DataType"
+# error. Matching what logical-plan / sql already do.
+arrow-schema  = { workspace = true }
 datatypes     = { path = "../datatypes" }
 datasource    = { path = "../datasource" }
 logical-plan  = { path = "../logical-plan" }
+
+[dev-dependencies]
+# Tests build RecordBatches directly from typed arrow arrays (Int32Array, …)
+# because the `fuzzer` crate (module 9) that the Kotlin tests use is not yet
+# ported. Only the tests touch arrow-array directly; the operators go through
+# the `datatypes` builder/vector layer.
+arrow-array   = { workspace = true }

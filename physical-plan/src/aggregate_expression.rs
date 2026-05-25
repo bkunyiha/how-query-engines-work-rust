@@ -1,3 +1,57 @@
-//! Port of `kquery/physical-plan/src/main/kotlin/AggregateExpression.kt`.
+//! Port of `kquery/physical-plan/src/main/kotlin/expressions/AggregateExpression.kt`.
 //!
-//! TODO: port from the upstream Kotlin source.
+//! An aggregate expression names the input it aggregates over and knows how to
+//! create a fresh [`Accumulator`] for it. `HashAggregateExec` holds one accumulator
+//! per aggregate per group key. This file also carries the `scalar_lt` / `scalar_gt`
+//! helpers shared by `MinExpression` / `MaxExpression`.
+
+use crate::expressions::{Accumulator, Expression};
+use datatypes::ScalarValue;
+use std::cmp::Ordering;
+use std::fmt;
+use std::sync::Arc;
+
+/// Physical aggregate expression. Kotlin `interface AggregateExpression`.
+///
+/// `: fmt::Display` so `HashAggregateExec`'s `toString` can print its aggregates
+/// (Kotlin relied on each class's `toString`, e.g. `"MIN(#0)"`).
+pub trait AggregateExpression: fmt::Display {
+    /// The expression whose values are aggregated. Kotlin `inputExpression()`.
+    fn input_expression(&self) -> Arc<dyn Expression>;
+
+    /// Create a fresh accumulator for this aggregate. Kotlin `createAccumulator()`.
+    fn create_accumulator(&self) -> Box<dyn Accumulator>;
+}
+
+/// Compare two same-typed scalars. Returns `None` for incomparable float pairs
+/// (e.g. involving `NaN`), so `scalar_lt`/`scalar_gt` treat `NaN` the way Kotlin's
+/// `<` / `>` operators do (always false). Panics on a type MIN/MAX doesn't support
+/// — matching Kotlin's `UnsupportedOperationException`.
+fn cmp_scalar(a: &ScalarValue, b: &ScalarValue) -> Option<Ordering> {
+    use ScalarValue::*;
+    match (a, b) {
+        (Int8(x), Int8(y)) => Some(x.cmp(y)),
+        (Int16(x), Int16(y)) => Some(x.cmp(y)),
+        (Int32(x), Int32(y)) => Some(x.cmp(y)),
+        (Int64(x), Int64(y)) => Some(x.cmp(y)),
+        (UInt8(x), UInt8(y)) => Some(x.cmp(y)),
+        (UInt16(x), UInt16(y)) => Some(x.cmp(y)),
+        (UInt32(x), UInt32(y)) => Some(x.cmp(y)),
+        (UInt64(x), UInt64(y)) => Some(x.cmp(y)),
+        (Float32(x), Float32(y)) => x.partial_cmp(y),
+        (Float64(x), Float64(y)) => x.partial_cmp(y),
+        (Utf8(x), Utf8(y)) => Some(x.cmp(y)),
+        (Date32(x), Date32(y)) => Some(x.cmp(y)),
+        _ => panic!("MIN/MAX is not implemented for type: {a:?}"),
+    }
+}
+
+/// `a < b` over same-typed scalars (Kotlin's `value < this.value` for MIN).
+pub(crate) fn scalar_lt(a: &ScalarValue, b: &ScalarValue) -> bool {
+    matches!(cmp_scalar(a, b), Some(Ordering::Less))
+}
+
+/// `a > b` over same-typed scalars (Kotlin's `value > this.value` for MAX).
+pub(crate) fn scalar_gt(a: &ScalarValue, b: &ScalarValue) -> bool {
+    matches!(cmp_scalar(a, b), Some(Ordering::Greater))
+}
