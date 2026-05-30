@@ -724,6 +724,7 @@ dependencies = [
  "arrow",
  "datasource",
  "datatypes",
+ "fuzzer",
  "logical-plan",
  "optimizer",
  "physical-plan",
@@ -867,7 +868,11 @@ dependencies = [
 name = "fuzzer"
 version = "0.1.0"
 dependencies = [
+ "arrow-schema",
+ "datasource",
+ "datatypes",
  "logical-plan",
+ "rand",
  "sql",
 ]
 

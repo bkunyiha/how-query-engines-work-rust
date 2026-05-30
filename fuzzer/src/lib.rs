@@ -7,9 +7,14 @@
 //! Faithful port of `kquery/fuzzer/src/main/kotlin/Fuzzer.kt`.
 //!
 //! ## Status
-//! TODO — module 9 of 15. Optional for the Phase-1 definition of done.
+//! Module 9 of 15 — **ported**. Unblocks the `Fuzzer`-backed `ExecutionTest`
+//! cases that were skipped pending this module.
 
 // ==============================================================
 // Per-file modules — one for each upstream Kotlin source file.
 // ==============================================================
 pub mod fuzzer;
+
+// Re-export the public surface so callers can write `fuzzer::Fuzzer` rather
+// than `fuzzer::fuzzer::Fuzzer`.
+pub use fuzzer::{EnhancedRandom, Fuzzer};

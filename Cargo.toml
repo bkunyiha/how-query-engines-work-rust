@@ -48,6 +48,12 @@ parquet       = "55"
 # thread pool, NOT tokio (tokio is for I/O-bound concurrency).
 rayon         = "1"
 
+# Random number generation — needed by the `fuzzer` crate as the analogue of
+# Kotlin's `kotlin.random.Random`. `StdRng::seed_from_u64(0)` matches the Kotlin
+# `Random(0)` seeding pattern. The RNG sequence will NOT byte-match Kotlin's
+# (different algorithms); the fuzzer is used for differential testing inside Rust.
+rand          = "0.8"
+
 # RPC and serialisation — needed only by protobuf / flight-server / client / distributed.
 prost         = "0.13"
 tonic         = "0.12"

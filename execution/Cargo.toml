@@ -17,3 +17,9 @@ physical-plan  = { path = "../physical-plan" }
 query-planner  = { path = "../query-planner" }
 optimizer      = { path = "../optimizer" }
 datasource     = { path = "../datasource" }
+
+[dev-dependencies]
+# The Fuzzer-backed ExecutionTest cases (`min max sum float`, `float math`,
+# `boolean expressions`, `inner join`, `left join`) construct deterministic
+# in-memory batches via `Fuzzer::create_record_batch(schema, columns)`.
+fuzzer         = { path = "../fuzzer" }
