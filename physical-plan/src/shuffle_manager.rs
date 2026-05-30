@@ -19,8 +19,10 @@ pub struct ShuffleManager {
 
 impl Default for ShuffleManager {
     fn default() -> Self {
-        // Kotlin default: "/tmp/kquery-shuffle".
-        Self::new("/tmp/kquery-shuffle")
+        // Default shuffle-spill directory. The Kotlin original used
+        // "/tmp/kquery-shuffle"; the Rust port renames this to the project's name
+        // (see TRANSLATION_NOTES.md "User-visible strings renamed kquery -> rquery").
+        Self::new("/tmp/rquery-shuffle")
     }
 }
 

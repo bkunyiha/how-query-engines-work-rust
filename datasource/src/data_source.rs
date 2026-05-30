@@ -9,11 +9,17 @@
 //!   `Box<dyn Iterator<Item = T>>` in this port. Errors panic rather
 //!   than being threaded through `Result<_>` — a future Rustified rewrite will
 //!   switch to `Stream<Item = Result<RecordBatch, FdapError>>`.
+//! - `Send + Sync`: a `ScanExec` holds `Arc<dyn DataSource>` and is itself a
+//!   `PhysicalPlan`, which requires `Send + Sync` so `ParallelContext` can hand
+//!   plans to rayon workers (see the `physical_plan` module note). Every concrete
+//!   source (`CsvDataSource`, `InMemoryDataSource`, `ParquetDataSource`) holds only
+//!   `Send + Sync` data — `String`, `Option<Schema>`, and arrow batches — so the
+//!   bound is satisfied automatically.
 
 use datatypes::{RecordBatch, Schema};
 
 /// Trait for any source that can describe its schema and produce batches.
-pub trait DataSource {
+pub trait DataSource: Send + Sync {
     /// Return the schema for the underlying data source.
     fn schema(&self) -> Schema;
 

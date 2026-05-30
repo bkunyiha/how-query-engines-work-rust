@@ -43,6 +43,11 @@ arrow-schema  = "55"
 arrow-flight  = "55"
 parquet       = "55"
 
+# Data-parallelism — the faithful Rust substitution for Kotlin coroutines in
+# `ParallelContext` (ARCHITECTURE.md §3.9 / §4.8). CPU-bound work on a work-stealing
+# thread pool, NOT tokio (tokio is for I/O-bound concurrency).
+rayon         = "1"
+
 # RPC and serialisation — needed only by protobuf / flight-server / client / distributed.
 prost         = "0.13"
 tonic         = "0.12"

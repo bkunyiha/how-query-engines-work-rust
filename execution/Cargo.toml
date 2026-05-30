@@ -9,7 +9,10 @@ rust-version.workspace = true
 
 [dependencies]
 arrow                 = { workspace = true }
+rayon                 = { workspace = true }
+datatypes      = { path = "../datatypes" }
 logical-plan   = { path = "../logical-plan" }
+sql            = { path = "../sql" }
 physical-plan  = { path = "../physical-plan" }
 query-planner  = { path = "../query-planner" }
 optimizer      = { path = "../optimizer" }

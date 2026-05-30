@@ -20,8 +20,11 @@ use std::fmt;
 /// Physical representation of an expression.
 ///
 /// `Expression: fmt::Display` so that composite expressions (binary, cast) and
-/// operators can print their operands; Kotlin relied on `toString()`.
-pub trait Expression: fmt::Display {
+/// operators can print their operands; Kotlin relied on `toString()`. `Send + Sync`
+/// lets `Arc<dyn Expression>` be shared with rayon workers in `ParallelContext`
+/// (see the `PhysicalPlan` module note). It holds: every concrete expression
+/// stores only `Arc<dyn Expression>` operands plus plain data.
+pub trait Expression: fmt::Display + Send + Sync {
     /// Evaluate against an input record batch and produce a column of output.
     ///
     /// Kotlin returns `ColumnVector` (the interface); the Rust analogue is a
@@ -321,16 +324,6 @@ pub(crate) fn as_f64(v: &ScalarValue) -> f64 {
     }
 }
 
-pub(crate) fn as_str(v: &ScalarValue) -> &str {
-    match v {
-        ScalarValue::Utf8(s) => s,
-        other => panic!("expected Utf8, got {other:?}"),
-    }
-}
-
-pub(crate) fn as_date(v: &ScalarValue) -> i32 {
-    match v {
-        ScalarValue::Date32(x) => *x,
-        other => panic!("expected Date32, got {other:?}"),
-    }
-}
+// Note: there is no `as_date` here. The boolean comparison family's Date32 arm uses
+// the null-aware `as_opt_date` in `boolean_expression.rs`; the math family has no
+// date arm, so a panicking `as_date` extractor has no remaining caller.

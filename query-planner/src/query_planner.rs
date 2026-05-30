@@ -279,7 +279,7 @@ impl QueryPlanner {
 
             // --- Variants with no physical counterpart (Kotlin's `else -> throw`). ---
             LogicalExpr::LiteralFloat(_) => {
-                panic!("LiteralFloat has no physical expression (kquery's physical layer has no float literal); use LiteralDouble")
+                panic!("LiteralFloat has no physical expression; use LiteralDouble")
             }
             LogicalExpr::LiteralDate(_) => panic!(
                 "physical date literals are not yet implemented: the logical layer stores dates as \

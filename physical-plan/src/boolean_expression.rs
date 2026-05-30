@@ -21,8 +21,23 @@
 //! the full per-type match applying `>=` to the typed values pulled out of each
 //! `ScalarValue`. Using the real Rust operator per type also gives the correct
 //! `NaN` behaviour for free (`NaN >= x` is `false`), matching the JVM.
+//!
+//! ## Translation note — `Option<bool>` three-valued logic (intentional divergence)
+//! This is an *intentional* divergence from the Kotlin reference, not a faithful
+//! port. kquery has no real null support in comparisons: its `CsvDataSource` infers
+//! every column as `String`, so an empty field is `""` and the comparison's
+//! `toString` never sees a null; on a true null its numeric cast (`l as Int`) would
+//! throw an NPE. The Rust port uses arrow-rs typed inference, which reads an empty
+//! field as a genuine `ScalarValue::Null`, so the comparison must answer for nulls.
+//! We model SQL's three-valued logic directly: a comparison returns `Option<bool>`,
+//! where `None` is SQL `UNKNOWN` (the result of comparing against `NULL`). `None`
+//! propagates through every operator the way `NULL` does in SQL, `AND`/`OR` use the
+//! Kleene truth tables ([`and3`]/[`or3`]), and `evaluate_boolean` writes an `UNKNOWN`
+//! out as a `ScalarValue::Null` cell — so the output is a *nullable* Boolean column,
+//! exactly what a real SQL engine produces. `SelectionExec` keeps only `Some(true)`
+//! rows, so both `FALSE` and `UNKNOWN` correctly drop a row from a `WHERE` clause.
 
-use crate::expressions::{as_date, as_f32, as_f64, as_i16, as_i32, as_i64, as_i8, as_str, Expression};
+use crate::expressions::Expression;
 use arrow_schema::DataType;
 use datatypes::arrow_types::BOOLEAN_TYPE;
 use datatypes::{ArrowVectorBuilder, ColumnVector, RecordBatch, ScalarValue};
@@ -37,12 +52,21 @@ pub trait BooleanExpression: Expression {
     fn right(&self) -> &Arc<dyn Expression>;
 
     /// The per-cell predicate. Kotlin: the abstract
-    /// `evaluate(l: Any?, r: Any?, arrowType: ArrowType): Boolean`.
-    fn compare_value(&self, l: &ScalarValue, r: &ScalarValue, arrow_type: &DataType) -> bool;
+    /// `evaluate(l: Any?, r: Any?, arrowType: ArrowType): Boolean`. Returns
+    /// `Option<bool>`: `Some(b)` for a definite result, `None` for SQL `UNKNOWN`
+    /// (produced whenever an operand is `NULL`). See the module note on
+    /// three-valued logic.
+    fn compare_value(
+        &self,
+        l: &ScalarValue,
+        r: &ScalarValue,
+        arrow_type: &DataType,
+    ) -> Option<bool>;
 
     /// Template method (Kotlin `evaluate(input)` + `compare`): evaluate both
-    /// sides, require equal lengths and identical types, then build a `Boolean`
-    /// column by applying [`compare_value`](Self::compare_value) cell-by-cell.
+    /// sides, require equal lengths and identical types, then build a *nullable*
+    /// `Boolean` column by applying [`compare_value`](Self::compare_value)
+    /// cell-by-cell. A `None` (SQL `UNKNOWN`) result is written as a null cell.
     fn evaluate_boolean(&self, input: &RecordBatch) -> Box<dyn ColumnVector> {
         let ll = self.left().evaluate(input);
         let rr = self.right().evaluate(input);
@@ -57,8 +81,10 @@ pub trait BooleanExpression: Expression {
         let arrow_type = ll.get_type();
         let mut builder = ArrowVectorBuilder::new(&BOOLEAN_TYPE, ll.size());
         for i in 0..ll.size() {
-            let value = self.compare_value(&ll.get_value(i), &rr.get_value(i), &arrow_type);
-            builder.append_value(&ScalarValue::Boolean(value));
+            match self.compare_value(&ll.get_value(i), &rr.get_value(i), &arrow_type) {
+                Some(b) => builder.append_value(&ScalarValue::Boolean(b)),
+                None => builder.append_value(&ScalarValue::Null), // SQL UNKNOWN → null cell
+            }
         }
         builder.set_value_count(ll.size());
         Box::new(builder.build())
@@ -67,38 +93,141 @@ pub trait BooleanExpression: Expression {
 
 /// Expand to a per-type `match` that applies the comparison operator `$op` to the
 /// two operands, pulling the typed value out of each `ScalarValue`. The supported
-/// types mirror the Kotlin `when (arrowType)` arms.
+/// types mirror the Kotlin `when (arrowType)` arms. Each arm goes through
+/// [`cmp_opt`], so a `NULL` operand yields `None` (SQL `UNKNOWN`) instead of
+/// panicking; the result type is `Option<bool>`.
 macro_rules! compare_typed {
     ($l:expr, $r:expr, $t:expr, $op:tt) => {
         match $t {
-            DataType::Int8 => as_i8($l) $op as_i8($r),
-            DataType::Int16 => as_i16($l) $op as_i16($r),
-            DataType::Int32 => as_i32($l) $op as_i32($r),
-            DataType::Int64 => as_i64($l) $op as_i64($r),
-            DataType::Float32 => as_f32($l) $op as_f32($r),
-            DataType::Float64 => as_f64($l) $op as_f64($r),
-            DataType::Utf8 => as_str($l) $op as_str($r),
-            DataType::Date32 => as_date($l) $op as_date($r),
+            DataType::Int8    => cmp_opt(as_opt_i8($l),   as_opt_i8($r),   |a, b| a $op b),
+            DataType::Int16   => cmp_opt(as_opt_i16($l),  as_opt_i16($r),  |a, b| a $op b),
+            DataType::Int32   => cmp_opt(as_opt_i32($l),  as_opt_i32($r),  |a, b| a $op b),
+            DataType::Int64   => cmp_opt(as_opt_i64($l),  as_opt_i64($r),  |a, b| a $op b),
+            DataType::Float32 => cmp_opt(as_opt_f32($l),  as_opt_f32($r),  |a, b| a $op b),
+            DataType::Float64 => cmp_opt(as_opt_f64($l),  as_opt_f64($r),  |a, b| a $op b),
+            DataType::Utf8    => cmp_opt(as_opt_str($l),  as_opt_str($r),  |a, b| a $op b),
+            DataType::Date32  => cmp_opt(as_opt_date($l), as_opt_date($r), |a, b| a $op b),
             other => panic!("Unsupported data type in comparison expression: {other:?}"),
         }
     };
 }
 
-/// Kotlin `toBool`: a boolean is itself; a number is "true" iff it equals 1.
-/// Logical `AND`/`OR` apply this to each operand. In practice the operands are
-/// already Boolean columns (the results of comparisons).
-fn to_bool(v: &ScalarValue) -> bool {
+/// Apply a comparison only when both operands are present. A `NULL` (absent)
+/// operand makes the whole comparison `None` — SQL `UNKNOWN`. This is the single
+/// chokepoint that turns Rust `Option` handling into SQL null-propagation.
+fn cmp_opt<T>(l: Option<T>, r: Option<T>, f: impl FnOnce(T, T) -> bool) -> Option<bool> {
+    match (l, r) {
+        (Some(l), Some(r)) => Some(f(l, r)),
+        _ => None, // any NULL operand → UNKNOWN
+    }
+}
+
+// Null-aware extractors for the comparison family. Unlike the panicking `as_i32`
+// etc. in `expressions.rs` (shared with the math family, which has no null
+// semantics), these return `None` for `ScalarValue::Null` so the comparison can
+// propagate SQL UNKNOWN. A wrong *non-null* variant still panics, matching the
+// "types already coerced equal" contract of `evaluate_boolean`.
+
+fn as_opt_i8(v: &ScalarValue) -> Option<i8> {
     match v {
-        ScalarValue::Boolean(b) => *b,
-        ScalarValue::Int8(n) => *n == 1,
-        ScalarValue::Int16(n) => *n == 1,
-        ScalarValue::Int32(n) => *n == 1,
-        ScalarValue::Int64(n) => *n == 1,
-        ScalarValue::UInt8(n) => *n == 1,
-        ScalarValue::UInt16(n) => *n == 1,
-        ScalarValue::UInt32(n) => *n == 1,
-        ScalarValue::UInt64(n) => *n == 1,
+        ScalarValue::Null => None,
+        ScalarValue::Int8(x) => Some(*x),
+        other => panic!("expected Int8, got {other:?}"),
+    }
+}
+fn as_opt_i16(v: &ScalarValue) -> Option<i16> {
+    match v {
+        ScalarValue::Null => None,
+        ScalarValue::Int16(x) => Some(*x),
+        other => panic!("expected Int16, got {other:?}"),
+    }
+}
+fn as_opt_i32(v: &ScalarValue) -> Option<i32> {
+    match v {
+        ScalarValue::Null => None,
+        ScalarValue::Int32(x) => Some(*x),
+        other => panic!("expected Int32, got {other:?}"),
+    }
+}
+fn as_opt_i64(v: &ScalarValue) -> Option<i64> {
+    match v {
+        ScalarValue::Null => None,
+        ScalarValue::Int64(x) => Some(*x),
+        other => panic!("expected Int64, got {other:?}"),
+    }
+}
+fn as_opt_f32(v: &ScalarValue) -> Option<f32> {
+    match v {
+        ScalarValue::Null => None,
+        ScalarValue::Float32(x) => Some(*x),
+        other => panic!("expected Float32, got {other:?}"),
+    }
+}
+fn as_opt_f64(v: &ScalarValue) -> Option<f64> {
+    match v {
+        ScalarValue::Null => None,
+        ScalarValue::Float64(x) => Some(*x),
+        other => panic!("expected Float64, got {other:?}"),
+    }
+}
+fn as_opt_date(v: &ScalarValue) -> Option<i32> {
+    match v {
+        ScalarValue::Null => None,
+        ScalarValue::Date32(x) => Some(*x),
+        other => panic!("expected Date32, got {other:?}"),
+    }
+}
+
+/// Borrow a string-typed cell as `&str`, or `None` if the cell is null. No
+/// allocation: `Utf8` borrows its `String`, `Binary` is validated in place
+/// (invalid UTF-8 → `None`). Replaces the old Kotlin-mirroring `kotlin_string`,
+/// which allocated a `String` per cell and encoded null as the literal `"null"`.
+fn as_opt_str(v: &ScalarValue) -> Option<&str> {
+    match v {
+        ScalarValue::Null => None,
+        ScalarValue::Utf8(s) => Some(s.as_str()),
+        ScalarValue::Binary(b) => std::str::from_utf8(b).ok(),
+        other => panic!("expected Utf8/Binary, got {other:?}"),
+    }
+}
+
+/// Read a cell as a three-valued boolean: `None` for `NULL`, `Some(b)` for a
+/// boolean, and `Some(n == 1)` for an integer (Kotlin `toBool`'s number rule).
+/// Used by the logical `AND`/`OR` operators. In practice their operands are
+/// already Boolean columns (the results of comparisons), which may now be null.
+fn as_opt_bool(v: &ScalarValue) -> Option<bool> {
+    match v {
+        ScalarValue::Null => None,
+        ScalarValue::Boolean(b) => Some(*b),
+        ScalarValue::Int8(n) => Some(*n == 1),
+        ScalarValue::Int16(n) => Some(*n == 1),
+        ScalarValue::Int32(n) => Some(*n == 1),
+        ScalarValue::Int64(n) => Some(*n == 1),
+        ScalarValue::UInt8(n) => Some(*n == 1),
+        ScalarValue::UInt16(n) => Some(*n == 1),
+        ScalarValue::UInt32(n) => Some(*n == 1),
+        ScalarValue::UInt64(n) => Some(*n == 1),
         other => panic!("Cannot convert {other:?} to bool"),
+    }
+}
+
+/// SQL Kleene `AND`: `FALSE` dominates (so `FALSE AND NULL = FALSE`), `TRUE AND
+/// TRUE = TRUE`, and any other combination involving `NULL` is `UNKNOWN`.
+fn and3(l: Option<bool>, r: Option<bool>) -> Option<bool> {
+    match (l, r) {
+        (Some(false), _) | (_, Some(false)) => Some(false),
+        (Some(true), Some(true)) => Some(true),
+        _ => None,
+    }
+}
+
+/// SQL Kleene `OR`: `TRUE` dominates (so `TRUE OR NULL = TRUE`), `FALSE OR FALSE
+/// = FALSE`, and any other combination involving `NULL` is `UNKNOWN`.
+fn or3(l: Option<bool>, r: Option<bool>) -> Option<bool> {
+    match (l, r) {
+        (Some(true), _) | (_, Some(true)) => Some(true),
+        (Some(false), Some(false)) => Some(false),
+        _ => None,
     }
 }
 
@@ -133,7 +262,7 @@ macro_rules! boolean_op {
                 $l: &ScalarValue,
                 $r: &ScalarValue,
                 $t: &DataType,
-            ) -> bool {
+            ) -> Option<bool> {
                 $body
             }
         }
@@ -152,9 +281,10 @@ macro_rules! boolean_op {
     };
 }
 
-// AND / OR ignore the Arrow type and operate on the truthiness of each side.
-boolean_op!(AndExpression, "AND", |l, r, _t| to_bool(l) && to_bool(r));
-boolean_op!(OrExpression, "OR", |l, r, _t| to_bool(l) || to_bool(r));
+// AND / OR ignore the Arrow type and operate on the truthiness of each side,
+// using SQL Kleene three-valued logic so a NULL operand propagates correctly.
+boolean_op!(AndExpression, "AND", |l, r, _t| and3(as_opt_bool(l), as_opt_bool(r)));
+boolean_op!(OrExpression, "OR", |l, r, _t| or3(as_opt_bool(l), as_opt_bool(r)));
 
 // Comparisons dispatch on the (shared) Arrow type via `compare_typed!`.
 boolean_op!(EqExpression, "=", |l, r, t| compare_typed!(l, r, t, ==));
@@ -280,6 +410,93 @@ mod tests {
         for i in 0..result.size() {
             assert_eq!(result.get_value(i), ScalarValue::Boolean(a[i] >= b[i]));
         }
+    }
+
+    #[test]
+    fn eq_with_null_string_is_unknown_not_panic() {
+        // Regression for the execution-module integration: arrow reads an empty CSV
+        // field as a null cell, so `state = 'CO'` compares a `ScalarValue::Null`.
+        // SQL three-valued logic: NULL = 'CO' is UNKNOWN, written as a null cell —
+        // not a panic, and not `false`. The WHERE filter drops it either way.
+        use crate::expressions::LiteralStringExpression;
+        let a: Vec<Option<&str>> = vec![Some("CO"), None, Some("CA")];
+        let schema = Arc::new(ArrowSchema::new(vec![ArrowField::new("state", DataType::Utf8, true)]));
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![Arc::new(StringArray::from(a)) as ArrayRef],
+        )
+        .unwrap();
+        let expr = EqExpression::new(
+            Arc::new(ColumnExpression::new(0)),
+            Arc::new(LiteralStringExpression::new("CO".to_string())),
+        );
+        let result = expr.evaluate(&batch);
+        assert_eq!(result.get_value(0), ScalarValue::Boolean(true)); // "CO" == "CO"
+        assert_eq!(result.get_value(1), ScalarValue::Null); // NULL = 'CO' -> UNKNOWN
+        assert_eq!(result.get_value(2), ScalarValue::Boolean(false)); // "CA" != "CO"
+    }
+
+    #[test]
+    fn neq_with_null_string_is_unknown_not_true() {
+        // The case the old Kotlin-mirroring code got wrong: stringify made
+        // `null != 'CO'` == `"null" != "CO"` == true, wrongly KEEPING a null row in
+        // `WHERE state != 'CO'`. SQL says NULL != 'CO' is UNKNOWN (null cell) -> drop.
+        use crate::expressions::LiteralStringExpression;
+        let a: Vec<Option<&str>> = vec![Some("CO"), None, Some("CA")];
+        let schema = Arc::new(ArrowSchema::new(vec![ArrowField::new("state", DataType::Utf8, true)]));
+        let batch =
+            RecordBatch::try_new(schema, vec![Arc::new(StringArray::from(a)) as ArrayRef]).unwrap();
+        let expr = NeqExpression::new(
+            Arc::new(ColumnExpression::new(0)),
+            Arc::new(LiteralStringExpression::new("CO".to_string())),
+        );
+        let result = expr.evaluate(&batch);
+        assert_eq!(result.get_value(0), ScalarValue::Boolean(false)); // "CO" != "CO"
+        assert_eq!(result.get_value(1), ScalarValue::Null); // NULL != 'CO' -> UNKNOWN
+        assert_eq!(result.get_value(2), ScalarValue::Boolean(true)); // "CA" != "CO"
+    }
+
+    #[test]
+    fn numeric_compare_with_null_is_unknown_not_panic() {
+        // The numeric path used to panic on a null (mirroring Kotlin's `(l as Int)`
+        // NPE). Under three-valued logic it must yield UNKNOWN instead.
+        let a: Vec<Option<i32>> = vec![Some(5), None, Some(20)];
+        let b: Vec<Option<i32>> = vec![Some(10), Some(10), Some(10)];
+        let schema = Arc::new(ArrowSchema::new(vec![
+            ArrowField::new("a", DataType::Int32, true),
+            ArrowField::new("b", DataType::Int32, true),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(Int32Array::from(a)) as ArrayRef,
+                Arc::new(Int32Array::from(b)) as ArrayRef,
+            ],
+        )
+        .unwrap();
+        let result = GtExpression::new(
+            Arc::new(ColumnExpression::new(0)),
+            Arc::new(ColumnExpression::new(1)),
+        )
+        .evaluate(&batch);
+        assert_eq!(result.get_value(0), ScalarValue::Boolean(false)); // 5 > 10
+        assert_eq!(result.get_value(1), ScalarValue::Null); // NULL > 10 -> UNKNOWN
+        assert_eq!(result.get_value(2), ScalarValue::Boolean(true)); // 20 > 10
+    }
+
+    #[test]
+    fn and_or_kleene_three_valued_logic() {
+        // Verify the Kleene truth tables directly against the helpers.
+        let (t, f, n) = (Some(true), Some(false), None);
+        // AND: FALSE dominates; NULL only when no FALSE and at least one NULL.
+        assert_eq!(and3(f, n), Some(false)); // FALSE AND NULL = FALSE
+        assert_eq!(and3(t, n), None); //         TRUE  AND NULL = UNKNOWN
+        assert_eq!(and3(n, n), None); //         NULL  AND NULL = UNKNOWN
+        assert_eq!(and3(t, t), Some(true));
+        // OR: TRUE dominates; NULL only when no TRUE and at least one NULL.
+        assert_eq!(or3(t, n), Some(true)); //    TRUE  OR  NULL = TRUE
+        assert_eq!(or3(f, n), None); //          FALSE OR  NULL = UNKNOWN
+        assert_eq!(or3(f, f), Some(false));
     }
 
     #[test]

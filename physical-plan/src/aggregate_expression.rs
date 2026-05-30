@@ -14,8 +14,11 @@ use std::sync::Arc;
 /// Physical aggregate expression. Kotlin `interface AggregateExpression`.
 ///
 /// `: fmt::Display` so `HashAggregateExec`'s `toString` can print its aggregates
-/// (Kotlin relied on each class's `toString`, e.g. `"MIN(#0)"`).
-pub trait AggregateExpression: fmt::Display {
+/// (Kotlin relied on each class's `toString`, e.g. `"MIN(#0)"`). `Send + Sync`
+/// lets `Arc<dyn AggregateExpression>` be shared with rayon workers in
+/// `ParallelContext` (see the `PhysicalPlan` module note); each concrete aggregate
+/// holds only an `Arc<dyn Expression>` input plus plain data.
+pub trait AggregateExpression: fmt::Display + Send + Sync {
     /// The expression whose values are aggregated. Kotlin `inputExpression()`.
     fn input_expression(&self) -> Arc<dyn Expression>;
 

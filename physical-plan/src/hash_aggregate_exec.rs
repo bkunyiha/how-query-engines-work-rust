@@ -82,6 +82,13 @@ impl PhysicalPlan for HashAggregateExec {
         vec![self.input.as_ref()]
     }
 
+    /// Override the [`PhysicalPlan`] downcast hook so `ParallelContext` can
+    /// recover the concrete aggregate and run its partial/final split in
+    /// parallel (Kotlin's `when (plan) { is HashAggregateExec -> … }`).
+    fn as_hash_aggregate(&self) -> Option<&HashAggregateExec> {
+        Some(self)
+    }
+
     fn execute(&self) -> Box<dyn Iterator<Item = RecordBatch>> {
         // One accumulator list per group key.
         let mut map: HashMap<GroupKey, Vec<Box<dyn Accumulator>>> = HashMap::new();
