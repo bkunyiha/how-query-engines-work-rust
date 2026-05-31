@@ -53,6 +53,10 @@ impl Expression for CastExpression {
         builder.set_value_count(value.size());
         Box::new(builder.build())
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 impl fmt::Display for CastExpression {

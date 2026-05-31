@@ -82,11 +82,11 @@ impl PhysicalPlan for HashAggregateExec {
         vec![self.input.as_ref()]
     }
 
-    /// Override the [`PhysicalPlan`] downcast hook so `ParallelContext` can
-    /// recover the concrete aggregate and run its partial/final split in
-    /// parallel (Kotlin's `when (plan) { is HashAggregateExec -> … }`).
-    fn as_hash_aggregate(&self) -> Option<&HashAggregateExec> {
-        Some(self)
+    /// Override the [`PhysicalPlan::as_any`] hook so `ParallelContext` can
+    /// downcast and recover the concrete aggregate for its partial/final
+    /// split (Kotlin's `when (plan) { is HashAggregateExec -> … }`).
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 
     fn execute(&self) -> Box<dyn Iterator<Item = RecordBatch>> {

@@ -25,6 +25,10 @@ impl Expression for ColumnExpression {
         // existing arrow `ArrayRef` (cheap, Arc-cloned) as a ColumnVector.
         Box::new(record_batch::field(input, self.i))
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 impl fmt::Display for ColumnExpression {

@@ -1664,6 +1664,11 @@ dependencies = [
 name = "protobuf"
 version = "0.1.0"
 dependencies = [
+ "arrow-schema",
+ "chrono",
+ "datasource",
+ "datatypes",
+ "logical-plan",
  "physical-plan",
  "prost",
  "tonic",

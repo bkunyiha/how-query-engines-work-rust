@@ -32,6 +32,10 @@ impl PhysicalPlan for LimitExec {
         self.input.schema()
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     fn execute(&self) -> Box<dyn Iterator<Item = RecordBatch>> {
         let schema = self.input.schema();
         // `scan` carries `remaining` (the budget) across batches; returning `None`

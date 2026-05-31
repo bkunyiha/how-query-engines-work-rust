@@ -38,7 +38,6 @@
 //! bound — their trait objects are created and consumed inside a single worker and
 //! never cross a thread boundary.
 
-use crate::hash_aggregate_exec::HashAggregateExec;
 use datatypes::{RecordBatch, Schema};
 use std::fmt;
 
@@ -62,17 +61,14 @@ pub trait PhysicalPlan: fmt::Display + Send + Sync {
     /// them. Leaf operators (e.g. a scan) return an empty vec.
     fn children(&self) -> Vec<&dyn PhysicalPlan>;
 
-    /// Typed downcast hook used by `ParallelContext` to special-case parallel
-    /// aggregation. Kotlin's `executeParallel` pattern-matches the physical plan
-    /// (`when (plan) { is HashAggregateExec -> … }`), but Rust cannot match a
-    /// `&dyn PhysicalPlan` by concrete type without `Any`. Rather than add
-    /// `as_any` boilerplate to every operator, the trait exposes this accessor:
-    /// it defaults to `None` and is overridden *only* by [`HashAggregateExec`].
-    /// The coupling to one concrete operator is intentional and contained — it
-    /// keeps the special case to a single line at the call site.
-    fn as_hash_aggregate(&self) -> Option<&HashAggregateExec> {
-        None
-    }
+    /// Type-erased self-reference for runtime downcasting. Kotlin's
+    /// `when (plan) { is XExec -> … }` becomes the standard Rust idiom
+    /// `plan.as_any().downcast_ref::<XExec>()`. Same pattern as DataFusion's
+    /// `ExecutionPlan::as_any`. The trait stays impl-agnostic — adding a new
+    /// operator does not require editing this trait or any sibling operator's
+    /// impl. Each concrete `impl PhysicalPlan for X` overrides with
+    /// `fn as_any(&self) -> &dyn Any { self }`.
+    fn as_any(&self) -> &dyn std::any::Any;
 
     /// Human-readable, indented rendering of this plan and its subtree.
     /// Kotlin: `PhysicalPlan.pretty()`.

@@ -38,6 +38,26 @@ live in `testdata/`.
 
 ## Building
 
+### Prerequisites
+
+In addition to a Rust 1.85+ toolchain (the workspace targets edition 2024),
+the `protobuf` crate's `build.rs` shells out to **`protoc`** at build time to
+compile the wire-format definitions in `proto/rquery.proto`. Install it once:
+
+```bash
+# macOS
+brew install protobuf
+
+# Debian / Ubuntu
+sudo apt install protobuf-compiler
+```
+
+A missing `protoc` surfaces as a clear error from `tonic-build` on the first
+`cargo build` that exercises the `protobuf` crate (or anything that depends
+on it).
+
+### Build & test
+
 ```bash
 cargo build --workspace
 cargo test --workspace

@@ -35,6 +35,12 @@ pub trait MathExpression: BinaryExpression {
     /// Kotlin: the abstract `evaluate(l: Any?, r: Any?, arrowType: ArrowType): Any?`.
     fn evaluate_cell(&self, l: &ScalarValue, r: &ScalarValue, arrow_type: &DataType)
         -> ScalarValue;
+
+    /// Wire-format operator name (`"add"`, `"subtract"`, `"multiply"`,
+    /// `"divide"`). Used by `protobuf::serialize_physical_expr` to serialise
+    /// this expression as a `pb::PhysicalBinaryExprNode` with the matching
+    /// `op` string. Same shape as `BooleanExpression::op_name`.
+    fn op_name(&self) -> &'static str;
 }
 
 /// Build an output column the same type as the left input by evaluating the
@@ -94,6 +100,10 @@ impl MathExpression for AddExpression {
             other => panic!("Unsupported data type in math expression: {other:?}"),
         }
     }
+
+    fn op_name(&self) -> &'static str {
+        "add"
+    }
 }
 
 impl BinaryExpression for AddExpression {
@@ -111,6 +121,14 @@ impl BinaryExpression for AddExpression {
 impl Expression for AddExpression {
     fn evaluate(&self, input: &RecordBatch) -> Box<dyn ColumnVector> {
         self.evaluate_binary(input)
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_math_expression(&self) -> Option<&dyn MathExpression> {
+        Some(self)
     }
 }
 
@@ -156,6 +174,10 @@ impl MathExpression for SubtractExpression {
             other => panic!("Unsupported data type in math expression: {other:?}"),
         }
     }
+
+    fn op_name(&self) -> &'static str {
+        "subtract"
+    }
 }
 
 impl BinaryExpression for SubtractExpression {
@@ -173,6 +195,14 @@ impl BinaryExpression for SubtractExpression {
 impl Expression for SubtractExpression {
     fn evaluate(&self, input: &RecordBatch) -> Box<dyn ColumnVector> {
         self.evaluate_binary(input)
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_math_expression(&self) -> Option<&dyn MathExpression> {
+        Some(self)
     }
 }
 
@@ -218,6 +248,10 @@ impl MathExpression for MultiplyExpression {
             other => panic!("Unsupported data type in math expression: {other:?}"),
         }
     }
+
+    fn op_name(&self) -> &'static str {
+        "multiply"
+    }
 }
 
 impl BinaryExpression for MultiplyExpression {
@@ -235,6 +269,14 @@ impl BinaryExpression for MultiplyExpression {
 impl Expression for MultiplyExpression {
     fn evaluate(&self, input: &RecordBatch) -> Box<dyn ColumnVector> {
         self.evaluate_binary(input)
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_math_expression(&self) -> Option<&dyn MathExpression> {
+        Some(self)
     }
 }
 
@@ -282,6 +324,10 @@ impl MathExpression for DivideExpression {
             other => panic!("Unsupported data type in math expression: {other:?}"),
         }
     }
+
+    fn op_name(&self) -> &'static str {
+        "divide"
+    }
 }
 
 impl BinaryExpression for DivideExpression {
@@ -299,6 +345,14 @@ impl BinaryExpression for DivideExpression {
 impl Expression for DivideExpression {
     fn evaluate(&self, input: &RecordBatch) -> Box<dyn ColumnVector> {
         self.evaluate_binary(input)
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_math_expression(&self) -> Option<&dyn MathExpression> {
+        Some(self)
     }
 }
 

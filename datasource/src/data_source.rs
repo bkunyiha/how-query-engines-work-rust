@@ -26,4 +26,12 @@ pub trait DataSource: Send + Sync {
     /// Scan the data source, selecting the specified columns. An empty
     /// `projection` slice means "all columns".
     fn scan(&self, projection: &[String]) -> Box<dyn Iterator<Item = RecordBatch>>;
+
+    /// Type-erased self-reference for runtime downcasting (see
+    /// `physical_plan::PhysicalPlan::as_any`). `protobuf` — the only caller
+    /// that needs to branch on the concrete data source — uses
+    /// `ds.as_any().downcast_ref::<CsvDataSource>()` etc. Reproduces Kotlin's
+    /// `when (ds) { is CsvDataSource -> … }` via the standard Rust idiom that
+    /// DataFusion also uses for `TableProvider`.
+    fn as_any(&self) -> &dyn std::any::Any;
 }

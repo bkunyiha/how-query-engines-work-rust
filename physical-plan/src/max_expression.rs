@@ -26,6 +26,9 @@ impl AggregateExpression for MaxExpression {
     fn create_accumulator(&self) -> Box<dyn Accumulator> {
         Box::new(MaxAccumulator::new())
     }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 impl fmt::Display for MaxExpression {

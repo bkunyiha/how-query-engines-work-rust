@@ -9,8 +9,13 @@ rust-version.workspace = true
 build        = "build.rs"
 
 [dependencies]
-prost                = { workspace = true }
-tonic                = { workspace = true }
+prost         = { workspace = true }
+tonic         = { workspace = true }
+chrono        = { workspace = true }       # NaiveDate for LogicalExpr::LiteralDate serdes
+arrow-schema  = { workspace = true }       # DataType return-type for from_proto_arrow_type
+datatypes     = { path = "../datatypes" }
+datasource    = { path = "../datasource" } # CsvDataSource / ParquetDataSource for scan deserialisation
+logical-plan  = { path = "../logical-plan" }
 physical-plan = { path = "../physical-plan" }
 
 [build-dependencies]

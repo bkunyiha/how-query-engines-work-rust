@@ -22,9 +22,10 @@
 //!   `aggregate_expr` (`Arc` clones) and the schema all satisfy them.
 //! - **Concrete-type recovery.** Kotlin's `executeParallel` does
 //!   `when (plan) { is HashAggregateExec -> … else -> plan.execute() }`. Rust can't
-//!   match a `&dyn PhysicalPlan` by concrete type, so [`PhysicalPlan`] exposes an
-//!   `as_hash_aggregate()` downcast hook (default `None`, overridden by
-//!   `HashAggregateExec`) — see its trait docs.
+//!   match a `&dyn PhysicalPlan` by concrete type, so `PhysicalPlan` exposes
+//!   `fn as_any(&self) -> &dyn Any` and we downcast with
+//!   `plan.as_any().downcast_ref::<HashAggregateExec>()` (the standard Rust idiom,
+//!   matching DataFusion's `ExecutionPlan::as_any`).
 //! - **`InMemoryPlan`** mirrors Kotlin's private same-named class: a leaf physical
 //!   plan that simply replays a pre-loaded `Vec<RecordBatch>`, used to feed the
 //!   partial and final aggregates.
@@ -148,9 +149,12 @@ impl ParallelContext {
     /// Run a physical plan, special-casing `HashAggregateExec` for parallelism.
     /// Kotlin `executeParallel`.
     fn execute_parallel(&self, plan: &dyn PhysicalPlan) -> Box<dyn Iterator<Item = RecordBatch>> {
-        match plan.as_hash_aggregate() {
-            Some(aggregate) => self.execute_parallel_aggregate(aggregate),
-            None => plan.execute(),
+        // Standard Rust idiom for "is this trait object a specific concrete type?"
+        // (Kotlin's `when (plan) { is HashAggregateExec -> … else -> plan.execute() }`).
+        if let Some(aggregate) = plan.as_any().downcast_ref::<HashAggregateExec>() {
+            self.execute_parallel_aggregate(aggregate)
+        } else {
+            plan.execute()
         }
     }
 
@@ -257,6 +261,10 @@ impl PhysicalPlan for InMemoryPlan {
     fn execute(&self) -> Box<dyn Iterator<Item = RecordBatch>> {
         // arrow `RecordBatch` is `Arc`-backed, so cloning the vec is cheap.
         Box::new(self.batches.clone().into_iter())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 

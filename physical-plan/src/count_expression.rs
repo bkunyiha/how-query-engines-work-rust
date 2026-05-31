@@ -27,6 +27,9 @@ impl AggregateExpression for CountExpression {
     fn create_accumulator(&self) -> Box<dyn Accumulator> {
         Box::new(CountAccumulator::new())
     }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 impl fmt::Display for CountExpression {

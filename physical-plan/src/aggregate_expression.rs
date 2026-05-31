@@ -24,6 +24,13 @@ pub trait AggregateExpression: fmt::Display + Send + Sync {
 
     /// Create a fresh accumulator for this aggregate. Kotlin `createAccumulator()`.
     fn create_accumulator(&self) -> Box<dyn Accumulator>;
+
+    /// Type-erased self-reference for runtime downcasting (see
+    /// `PhysicalPlan::as_any`). `protobuf::serialize_physical_aggr_expr` —
+    /// the only caller that needs to branch on concrete aggregate type —
+    /// uses `aggr.as_any().downcast_ref::<MinExpression>()` etc. Same pattern
+    /// DataFusion uses for `AggregateUDFImpl` / `AggregateExpr`.
+    fn as_any(&self) -> &dyn std::any::Any;
 }
 
 /// Compare two same-typed scalars. Returns `None` for incomparable float pairs

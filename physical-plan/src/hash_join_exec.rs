@@ -121,6 +121,10 @@ impl PhysicalPlan for HashJoinExec {
         vec![self.left.as_ref(), self.right.as_ref()]
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     fn execute(&self) -> Box<dyn Iterator<Item = RecordBatch>> {
         // --- Build phase: load all right-side rows into a hash table. ---
         let mut hash_table: HashMap<RowKey, Vec<Vec<ScalarValue>>> = HashMap::new();
@@ -240,6 +244,9 @@ mod tests {
         }
         fn children(&self) -> Vec<&dyn PhysicalPlan> {
             vec![]
+        }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
         }
     }
 

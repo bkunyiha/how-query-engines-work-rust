@@ -50,6 +50,10 @@ impl PhysicalPlan for SelectionExec {
     fn children(&self) -> Vec<&dyn PhysicalPlan> {
         vec![self.input.as_ref()]
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 impl std::fmt::Display for SelectionExec {

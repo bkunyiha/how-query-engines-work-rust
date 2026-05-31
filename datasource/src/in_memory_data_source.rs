@@ -31,6 +31,10 @@ impl DataSource for InMemoryDataSource {
         self.schema.clone()
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     fn scan(&self, projection: &[String]) -> Box<dyn Iterator<Item = RecordBatch>> {
         if projection.is_empty() {
             // No projection: hand back clones of the underlying batches.

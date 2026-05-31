@@ -30,6 +30,31 @@ pub trait Expression: fmt::Display + Send + Sync {
     /// Kotlin returns `ColumnVector` (the interface); the Rust analogue is a
     /// boxed trait object `Box<dyn ColumnVector>`.
     fn evaluate(&self, input: &RecordBatch) -> Box<dyn ColumnVector>;
+
+    /// Type-erased self-reference for runtime downcasting (see
+    /// `PhysicalPlan::as_any` for the rationale). The protobuf serializer
+    /// — the only caller that needs to branch on concrete expression type —
+    /// uses `expr.as_any().downcast_ref::<ColumnExpression>()` etc., the same
+    /// pattern DataFusion uses for `PhysicalExpr`. Each leaf `impl Expression`
+    /// (column, the four literals, cast) overrides with
+    /// `fn as_any(&self) -> &dyn Any { self }`.
+    fn as_any(&self) -> &dyn std::any::Any;
+
+    /// Family-narrowing accessor for the boolean expression family. Returns
+    /// `&dyn BooleanExpression` so the caller can read `op_name()`/`left()`/
+    /// `right()` without further per-operator dispatch. Each of the eight
+    /// boolean operators overrides this (via the `bool_expr!` macro). Kept
+    /// even after the `as_any` migration because there is no concrete type
+    /// that represents "any boolean op" — the dispatch is genuinely 1-to-N.
+    fn as_boolean_expression(&self) -> Option<&dyn crate::BooleanExpression> {
+        None
+    }
+
+    /// Family-narrowing accessor for the math expression family (Add/Sub/Mul/
+    /// Div/Mod). Same rationale as `as_boolean_expression`.
+    fn as_math_expression(&self) -> Option<&dyn crate::MathExpression> {
+        None
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -55,6 +80,10 @@ impl Expression for LiteralLongExpression {
             ScalarValue::Int64(self.value),
             record_batch::row_count(input),
         ))
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 
@@ -82,6 +111,10 @@ impl Expression for LiteralDoubleExpression {
             ScalarValue::Float64(self.value),
             record_batch::row_count(input),
         ))
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 
@@ -118,6 +151,10 @@ impl Expression for LiteralStringExpression {
             record_batch::row_count(input),
         ))
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 impl fmt::Display for LiteralStringExpression {
@@ -145,6 +182,10 @@ impl Expression for LiteralDateExpression {
             ScalarValue::Date32(self.days_since_epoch),
             record_batch::row_count(input),
         ))
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 
@@ -174,6 +215,10 @@ impl Expression for LiteralIntervalDaysExpression {
             ScalarValue::Int64(self.days),
             record_batch::row_count(input),
         ))
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 

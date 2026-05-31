@@ -67,6 +67,10 @@ impl Expression for Sqrt {
     fn evaluate(&self, input: &RecordBatch) -> Box<dyn ColumnVector> {
         self.evaluate_unary(input)
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 impl fmt::Display for Sqrt {
@@ -98,6 +102,10 @@ impl UnaryMathExpression for Log {
 impl Expression for Log {
     fn evaluate(&self, input: &RecordBatch) -> Box<dyn ColumnVector> {
         self.evaluate_unary(input)
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 

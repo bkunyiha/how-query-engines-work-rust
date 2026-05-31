@@ -30,6 +30,10 @@ impl Expression for DateSubtractIntervalExpression {
     fn evaluate(&self, input: &RecordBatch) -> Box<dyn ColumnVector> {
         date_interval(&self.date_expr, &self.interval_expr, input, |d, i| d - i)
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 impl fmt::Display for DateSubtractIntervalExpression {
@@ -56,6 +60,10 @@ impl DateAddIntervalExpression {
 impl Expression for DateAddIntervalExpression {
     fn evaluate(&self, input: &RecordBatch) -> Box<dyn ColumnVector> {
         date_interval(&self.date_expr, &self.interval_expr, input, |d, i| d + i)
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 

@@ -51,6 +51,10 @@ impl PhysicalPlan for ShuffleReaderExec {
              (local reads via ShuffleManager, remote via Arrow Flight); completed in module 13/14"
         )
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 impl std::fmt::Display for ShuffleReaderExec {

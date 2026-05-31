@@ -63,6 +63,11 @@ pub trait BooleanExpression: Expression {
         arrow_type: &DataType,
     ) -> Option<bool>;
 
+    /// Wire-format operator name (`"eq"`, `"and"`, …). Used by
+    /// `protobuf::serialize_physical_expr` to serialise this expression as a
+    /// `pb::PhysicalBinaryExprNode` with the matching `op` string.
+    fn op_name(&self) -> &'static str;
+
     /// Template method (Kotlin `evaluate(input)` + `compare`): evaluate both
     /// sides, require equal lengths and identical types, then build a *nullable*
     /// `Boolean` column by applying [`compare_value`](Self::compare_value)
@@ -237,7 +242,11 @@ fn or3(l: Option<bool>, r: Option<bool>) -> Option<bool> {
 /// rendering `"l <sym> r"`. This mirrors the Kotlin file, where each operator is
 /// a tiny class overriding one method.
 macro_rules! boolean_op {
-    ($name:ident, $sym:literal, |$l:ident, $r:ident, $t:ident| $body:expr) => {
+    // `$proto_op` is the wire-format operator name used by
+    // `protobuf::serialize_physical_expr` (e.g. "eq", "neq", "and"). It is
+    // distinct from `$sym` (the Display symbol like "=", "!=", "AND").
+    ($name:ident, $sym:literal, $proto_op:literal,
+     |$l:ident, $r:ident, $t:ident| $body:expr) => {
         #[doc = concat!("`l ", $sym, " r`. Kotlin `", stringify!($name), "`.")]
         pub struct $name {
             l: Arc<dyn Expression>,
@@ -265,11 +274,20 @@ macro_rules! boolean_op {
             ) -> Option<bool> {
                 $body
             }
+            fn op_name(&self) -> &'static str {
+                $proto_op
+            }
         }
 
         impl Expression for $name {
             fn evaluate(&self, input: &RecordBatch) -> Box<dyn ColumnVector> {
                 self.evaluate_boolean(input)
+            }
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+            fn as_boolean_expression(&self) -> Option<&dyn BooleanExpression> {
+                Some(self)
             }
         }
 
@@ -283,16 +301,16 @@ macro_rules! boolean_op {
 
 // AND / OR ignore the Arrow type and operate on the truthiness of each side,
 // using SQL Kleene three-valued logic so a NULL operand propagates correctly.
-boolean_op!(AndExpression, "AND", |l, r, _t| and3(as_opt_bool(l), as_opt_bool(r)));
-boolean_op!(OrExpression, "OR", |l, r, _t| or3(as_opt_bool(l), as_opt_bool(r)));
+boolean_op!(AndExpression, "AND", "and", |l, r, _t| and3(as_opt_bool(l), as_opt_bool(r)));
+boolean_op!(OrExpression,  "OR",  "or",  |l, r, _t| or3(as_opt_bool(l), as_opt_bool(r)));
 
 // Comparisons dispatch on the (shared) Arrow type via `compare_typed!`.
-boolean_op!(EqExpression, "=", |l, r, t| compare_typed!(l, r, t, ==));
-boolean_op!(NeqExpression, "!=", |l, r, t| compare_typed!(l, r, t, !=));
-boolean_op!(LtExpression, "<", |l, r, t| compare_typed!(l, r, t, <));
-boolean_op!(LtEqExpression, "<=", |l, r, t| compare_typed!(l, r, t, <=));
-boolean_op!(GtExpression, ">", |l, r, t| compare_typed!(l, r, t, >));
-boolean_op!(GtEqExpression, ">=", |l, r, t| compare_typed!(l, r, t, >=));
+boolean_op!(EqExpression,   "=",  "eq",   |l, r, t| compare_typed!(l, r, t, ==));
+boolean_op!(NeqExpression,  "!=", "neq",  |l, r, t| compare_typed!(l, r, t, !=));
+boolean_op!(LtExpression,   "<",  "lt",   |l, r, t| compare_typed!(l, r, t, <));
+boolean_op!(LtEqExpression, "<=", "lteq", |l, r, t| compare_typed!(l, r, t, <=));
+boolean_op!(GtExpression,   ">",  "gt",   |l, r, t| compare_typed!(l, r, t, >));
+boolean_op!(GtEqExpression, ">=", "gteq", |l, r, t| compare_typed!(l, r, t, >=));
 
 #[cfg(test)]
 mod tests {

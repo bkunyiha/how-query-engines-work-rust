@@ -52,6 +52,10 @@ impl PhysicalPlan for ProjectionExec {
     fn children(&self) -> Vec<&dyn PhysicalPlan> {
         vec![self.input.as_ref()]
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 impl fmt::Display for ProjectionExec {

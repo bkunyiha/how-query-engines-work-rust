@@ -55,6 +55,12 @@ impl DataSource for ParquetDataSource {
         schema_from_arrow(builder.schema())
     }
 
+    /// Type-erased self-reference for runtime downcasting. See the trait-level
+    /// note on `DataSource::as_any` for the rationale.
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     fn scan(&self, projection: &[String]) -> Box<dyn Iterator<Item = RecordBatch>> {
         let builder = self.open_builder();
 

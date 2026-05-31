@@ -35,6 +35,9 @@ impl AggregateExpression for SumExpression {
     fn create_accumulator(&self) -> Box<dyn Accumulator> {
         Box::new(SumAccumulator::new())
     }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 impl fmt::Display for SumExpression {

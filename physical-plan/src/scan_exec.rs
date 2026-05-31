@@ -42,6 +42,11 @@ impl PhysicalPlan for ScanExec {
         // A scan is a leaf — no inputs.
         vec![]
     }
+
+    /// See the `PhysicalPlan::as_any` docstring for the rationale.
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 impl fmt::Display for ScanExec {

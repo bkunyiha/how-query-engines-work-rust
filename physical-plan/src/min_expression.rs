@@ -26,6 +26,9 @@ impl AggregateExpression for MinExpression {
     fn create_accumulator(&self) -> Box<dyn Accumulator> {
         Box::new(MinAccumulator::new())
     }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 impl fmt::Display for MinExpression {
