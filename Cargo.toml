@@ -54,6 +54,20 @@ rayon         = "1"
 # (different algorithms); the fuzzer is used for differential testing inside Rust.
 rand          = "0.8"
 
+# Date / time — the Rust analogue of Kotlin's `java.time.*`. We use
+# `chrono::NaiveDate` wherever the Kotlin source uses `java.time.LocalDate`
+# (logical-plan `LiteralDate`, sql planner date-literal parse, query-planner
+# date-to-days lowering). Pulled in by the same crates that import it in
+# Kotlin — `logical-plan`, `sql`, `query-planner`. Standing convention: when
+# Kotlin uses a stdlib library, the Rust port uses the equivalent crate.
+chrono        = { version = "0.4", default-features = false, features = ["std"] }
+
+# Process / system info — the Rust analogue of Kotlin's
+# `Runtime.getRuntime().{max,total,free}Memory()`. Used by the `benchmarks`
+# crate to print process memory stats at the start and end of a run, matching
+# Kotlin's `Benchmarks.kt` shape. Per the standing convention above.
+sysinfo       = { version = "0.31", default-features = false, features = ["system"] }
+
 # RPC and serialisation — needed only by protobuf / flight-server / client / distributed.
 prost         = "0.13"
 tonic         = "0.12"

@@ -25,10 +25,10 @@
 //! - **Variants with no physical mapping** (faithful to Kotlin's `else -> throw`,
 //!   plus the Rust-only logical variants): `Not`, `Modulus`, `ScalarFunction`,
 //!   `LiteralFloat` (no physical float-literal expression — kquery has none either),
-//!   `LiteralDate` (the logical layer stores dates as *text*; physical date literals
-//!   need real date parsing, deferred — see `logical-plan/src/logical_expr.rs`), and
-//!   an `AggregateExpr` used as a scalar expression (handled by the `Aggregate`
-//!   operator, never planned standalone).
+//!   and an `AggregateExpr` used as a scalar expression (handled by the `Aggregate`
+//!   operator, never planned standalone). `LiteralDate` IS lowered here — the
+//!   `NaiveDate` → days-since-Unix-epoch conversion mirrors Kotlin's
+//!   `expr.value.toEpochDay().toInt()`.
 
 use datatypes::Schema;
 use logical_plan::{AggregateExpr, LogicalExpr, LogicalPlan};
@@ -36,13 +36,23 @@ use physical_plan::{
     AddExpression, AggregateExpression, AndExpression, AvgExpression, CastExpression,
     ColumnExpression, CountExpression, DateAddIntervalExpression, DateSubtractIntervalExpression,
     DivideExpression, EqExpression, Expression, GtEqExpression, GtExpression, HashAggregateExec,
-    HashJoinExec, LimitExec, LiteralDoubleExpression, LiteralIntervalDaysExpression,
-    LiteralLongExpression, LiteralStringExpression, LtEqExpression, LtExpression, MaxExpression,
-    MinExpression, MultiplyExpression, NeqExpression, OrExpression, PhysicalPlan, ProjectionExec,
-    ScanExec, SelectionExec, SubtractExpression, SumExpression,
+    HashJoinExec, LimitExec, LiteralDateExpression, LiteralDoubleExpression,
+    LiteralIntervalDaysExpression, LiteralLongExpression, LiteralStringExpression, LtEqExpression,
+    LtExpression, MaxExpression, MinExpression, MultiplyExpression, NeqExpression, OrExpression,
+    PhysicalPlan, ProjectionExec, ScanExec, SelectionExec, SubtractExpression, SumExpression,
 };
 use std::collections::HashSet;
 use std::sync::Arc;
+
+/// Convert a `chrono::NaiveDate` to "days since the Unix epoch" (1970-01-01).
+/// This is the Rust analogue of Kotlin's `LocalDate.toEpochDay().toInt()`,
+/// used to lower a logical `LiteralDate(NaiveDate)` into a physical
+/// `LiteralDateExpression { days_since_epoch: i32 }`.
+fn days_since_unix_epoch(date: chrono::NaiveDate) -> i32 {
+    let epoch = chrono::NaiveDate::from_ymd_opt(1970, 1, 1)
+        .expect("1970-01-01 is a valid date");
+    (date - epoch).num_days() as i32
+}
 
 /// Creates a physical query plan from a logical query plan. Kotlin `class QueryPlanner`.
 #[derive(Default)]
@@ -197,6 +207,12 @@ impl QueryPlanner {
             LogicalExpr::LiteralLong(n) => Arc::new(LiteralLongExpression::new(*n)),
             LogicalExpr::LiteralDouble(n) => Arc::new(LiteralDoubleExpression::new(*n)),
             LogicalExpr::LiteralString(s) => Arc::new(LiteralStringExpression::new(s.clone())),
+            // Kotlin: `is LiteralDate -> LiteralDateExpression(expr.value.toEpochDay().toInt())`.
+            // The `NaiveDate`-to-days-since-Unix-epoch arithmetic is `chrono`'s
+            // equivalent of `LocalDate::toEpochDay()`.
+            LogicalExpr::LiteralDate(date) => {
+                Arc::new(LiteralDateExpression::new(days_since_unix_epoch(*date)))
+            }
             LogicalExpr::LiteralIntervalDays(days) => {
                 Arc::new(LiteralIntervalDaysExpression::new(*days))
             }
@@ -281,10 +297,6 @@ impl QueryPlanner {
             LogicalExpr::LiteralFloat(_) => {
                 panic!("LiteralFloat has no physical expression; use LiteralDouble")
             }
-            LogicalExpr::LiteralDate(_) => panic!(
-                "physical date literals are not yet implemented: the logical layer stores dates as \
-                 text (see logical-plan/src/logical_expr.rs); needs date parsing in a future change"
-            ),
             LogicalExpr::Not(_) => panic!("Unsupported logical expression: NOT"),
             LogicalExpr::Modulus { .. } => panic!("Unsupported binary expression: modulus"),
             LogicalExpr::ScalarFunction { name, .. } => {

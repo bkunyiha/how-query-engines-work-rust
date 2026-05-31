@@ -9,5 +9,6 @@ rust-version.workspace = true
 
 [dependencies]
 arrow-schema = { workspace = true }
-datatypes  = { path = "../datatypes" }
-datasource = { path = "../datasource" }
+chrono       = { workspace = true }      # NaiveDate for `LiteralDate` (Kotlin `java.time.LocalDate`)
+datatypes    = { path = "../datatypes" }
+datasource   = { path = "../datasource" }

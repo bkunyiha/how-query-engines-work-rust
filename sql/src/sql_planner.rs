@@ -242,8 +242,15 @@ impl SqlPlanner {
             SqlExpr::String(v) => LogicalExpr::LiteralString(v.clone()),
             SqlExpr::Long(v) => LogicalExpr::LiteralLong(*v),
             SqlExpr::Double(v) => LogicalExpr::LiteralDouble(*v),
-            // Kotlin parses to a `LocalDate`; the logical layer stores the text.
-            SqlExpr::Date(v) => LogicalExpr::LiteralDate(v.clone()),
+            // Kotlin: `LiteralDate(java.time.LocalDate.parse(expr.value))`.
+            // Rust analogue: `chrono::NaiveDate::parse_from_str` with the same
+            // ISO-8601 format. Panics on invalid input (matches Kotlin's
+            // `LocalDate.parse` which throws `DateTimeParseException`).
+            SqlExpr::Date(v) => LogicalExpr::LiteralDate(
+                chrono::NaiveDate::parse_from_str(v, "%Y-%m-%d").unwrap_or_else(|e| {
+                    panic!("invalid date literal '{v}': {e}")
+                }),
+            ),
             SqlExpr::Interval(v) => self.parse_interval(v),
             SqlExpr::BinaryExpr { l, op, r } => {
                 let l = self.create_logical_expr(l);

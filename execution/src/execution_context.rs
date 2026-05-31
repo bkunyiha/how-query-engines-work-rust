@@ -121,9 +121,10 @@ mod tests {
     //! `ExecutionTest.kt` cases. The `Fuzzer`-backed cases — `min max sum float`,
     //! `float math`, `boolean expressions`, `inner join using DataFrame`,
     //! `left join using DataFrame` — use the now-ported `fuzzer` crate (module 9).
-    //! The `date and interval arithmetic` case exercises the `LiteralDate` path
-    //! the planner deliberately `panic!`s on today (see the `query-planner`
-    //! notes), so it remains intentionally omitted.
+    //! The `date and interval arithmetic` case is no longer blocked at the
+    //! planner (`LiteralDate` now lowers via `chrono::NaiveDate` → days-since-
+    //! Unix-epoch, matching Kotlin's `LocalDate.toEpochDay()`); a port of that
+    //! test can land alongside any remaining `DateSubtractInterval` work.
     //!
     //! ## Float formatting note
     //! Kotlin's `Float.toString()` emits `"1.0"` for whole-valued floats; Rust's

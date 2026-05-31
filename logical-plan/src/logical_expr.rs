@@ -83,11 +83,11 @@ pub enum LogicalExpr {
     LiteralFloat(f32),
     /// Kotlin `LiteralDouble`.
     LiteralDouble(f64),
-    /// Kotlin `LiteralDate(java.time.LocalDate)`. To keep the logical layer free
-    /// of a date-crate dependency, the date is stored as its text form
-    /// (e.g. `"2020-01-01"`); a future change can switch to `chrono::NaiveDate`
-    /// when physical date execution is implemented.
-    LiteralDate(String),
+    /// Kotlin `LiteralDate(java.time.LocalDate)`. The Rust port uses the
+    /// matching crate — `chrono::NaiveDate` — to keep parity with Kotlin's
+    /// JVM-stdlib date type. Convention: when Kotlin uses a stdlib library,
+    /// the Rust port uses the equivalent crate (see `TRANSLATION_NOTES.md`).
+    LiteralDate(chrono::NaiveDate),
     /// Kotlin `LiteralIntervalDays`.
     LiteralIntervalDays(i64),
 
@@ -175,7 +175,9 @@ impl LogicalExpr {
             LogicalExpr::LiteralLong(n) => Field::new(n.to_string(), INT64_TYPE),
             LogicalExpr::LiteralFloat(n) => Field::new(n.to_string(), FLOAT_TYPE),
             LogicalExpr::LiteralDouble(n) => Field::new(n.to_string(), DOUBLE_TYPE),
-            LogicalExpr::LiteralDate(s) => Field::new(s.clone(), DATE_DAY_TYPE),
+            // `NaiveDate`'s `Display` emits the ISO-8601 form ("YYYY-MM-DD"),
+            // which is the same name Kotlin uses (`value.toString()`).
+            LogicalExpr::LiteralDate(d) => Field::new(d.to_string(), DATE_DAY_TYPE),
             LogicalExpr::LiteralIntervalDays(days) => {
                 Field::new(format!("{days} days"), INTERVAL_DAY_TIME_TYPE)
             }
@@ -220,7 +222,7 @@ impl fmt::Display for LogicalExpr {
             LogicalExpr::LiteralLong(n) => write!(f, "{n}"),
             LogicalExpr::LiteralFloat(n) => write!(f, "{n}"),
             LogicalExpr::LiteralDouble(n) => write!(f, "{n}"),
-            LogicalExpr::LiteralDate(s) => write!(f, "DATE '{s}'"),
+            LogicalExpr::LiteralDate(d) => write!(f, "DATE '{d}'"),
             LogicalExpr::LiteralIntervalDays(days) => write!(f, "INTERVAL '{days} days'"),
             LogicalExpr::DateSubtractInterval { date, interval } => write!(f, "{date} - {interval}"),
             LogicalExpr::DateAddInterval { date, interval } => write!(f, "{date} + {interval}"),

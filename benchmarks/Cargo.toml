@@ -8,10 +8,20 @@ authors.workspace      = true
 rust-version.workspace = true
 
 [dependencies]
-execution = { path = "../execution" }
-anyhow           = { workspace = true }
-log              = { workspace = true }
-env_logger       = { workspace = true }
+execution    = { path = "../execution" }
+datasource   = { path = "../datasource" }    # ParquetDataSource (tpch_runner), InMemoryDataSource (benchmarks)
+datatypes    = { path = "../datatypes" }     # RecordBatch, SchemaConverter, to_csv
+# Coroutines → rayon (ARCHITECTURE.md §3.9): `benchmarks` fans out one query
+# per input CSV via `into_par_iter().flat_map(...)`, the third of the three
+# documented coroutine call sites in kquery.
+rayon        = { workspace = true }
+# Process-memory stats — Rust analogue of Kotlin's
+# `Runtime.getRuntime().{max,total,free}Memory()` (standing convention:
+# Kotlin stdlib → matching Rust crate).
+sysinfo      = { workspace = true }
+anyhow       = { workspace = true }
+log          = { workspace = true }
+env_logger   = { workspace = true }
 
 [[bin]]
 name = "tpch_runner"

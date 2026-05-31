@@ -177,9 +177,10 @@ pub fn lit_float(value: f32) -> LogicalExpr {
 pub fn lit_double(value: f64) -> LogicalExpr {
     LogicalExpr::LiteralDouble(value)
 }
-/// Kotlin: `fun lit(value: LocalDate)`. Takes the ISO-8601 text form.
-pub fn lit_date(value: impl Into<String>) -> LogicalExpr {
-    LogicalExpr::LiteralDate(value.into())
+/// Kotlin: `fun lit(value: LocalDate)`. Takes a `chrono::NaiveDate`
+/// (the Rust analogue of `java.time.LocalDate`).
+pub fn lit_date(value: chrono::NaiveDate) -> LogicalExpr {
+    LogicalExpr::LiteralDate(value)
 }
 
 /// Kotlin: `fun cast(expr, dataType)`.

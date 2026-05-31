@@ -9,7 +9,8 @@ rust-version.workspace = true
 
 [dependencies]
 arrow-schema = { workspace = true }
-datatypes   = { path = "../datatypes" }
+chrono       = { workspace = true }      # NaiveDate::parse for SqlExpr::Date literal lowering
+datatypes    = { path = "../datatypes" }
 logical-plan = { path = "../logical-plan" }
 
 # Per Plan §3.6: do NOT swap in sqlparser-rs. The Pratt parser is the pedagogical
