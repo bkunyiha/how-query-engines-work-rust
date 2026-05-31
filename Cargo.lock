@@ -712,9 +712,14 @@ name = "examples"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "datasource",
+ "datatypes",
  "env_logger",
  "execution",
  "log",
+ "logical-plan",
+ "optimizer",
+ "rayon",
 ]
 
 [[package]]

@@ -8,10 +8,18 @@ authors.workspace      = true
 rust-version.workspace = true
 
 [dependencies]
-execution = { path = "../execution" }
-log              = { workspace = true }
-env_logger       = { workspace = true }
-anyhow           = { workspace = true }
+execution       = { path = "../execution" }
+datasource      = { path = "../datasource" }    # InMemoryDataSource for parallel_query
+datatypes       = { path = "../datatypes" }     # RecordBatch, ScalarValue, arrow_types
+logical-plan    = { path = "../logical-plan" }  # col, cast, max, format, …
+optimizer       = { path = "../optimizer" }     # Optimizer used by nyc_taxi
+# Coroutines → rayon (ARCHITECTURE.md §3.9): `parallel_query` fans out 12
+# monthly CSV queries via `(1..=12).into_par_iter()`, the faithful Rust
+# substitution for kquery's `GlobalScope.async { … }.await`.
+rayon           = { workspace = true }
+log             = { workspace = true }
+env_logger      = { workspace = true }
+anyhow          = { workspace = true }
 
 [[bin]]
 name = "nyc_taxi"
