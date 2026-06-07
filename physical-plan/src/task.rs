@@ -4,12 +4,19 @@
 //! stage of a job. Scaffolding for the `distributed` module. The Kotlin source
 //! keeps the equivalent protobuf message as a comment; we preserve it.
 //!
-//! ## Translation note
-//! Kotlin's `data class Task` can't be a Rust `data`-style struct with derives:
-//! `plan: PhysicalPlan` becomes `Box<dyn PhysicalPlan>`, which is neither `Clone`,
-//! `Debug`, nor `PartialEq`, so no derives are applied.
+//! ## Translation note — `Arc<dyn PhysicalPlan>` for the plan field
+//! Plans are passed as `Arc<dyn PhysicalPlan>` throughout the workspace —
+//! matches DataFusion's `Arc<dyn ExecutionPlan>` shape. `Task` happens to be
+//! the one place where it matters most: `Scheduler::execute_stage` builds N
+//! tasks per partition that all share the same stage plan, and Arc-cloning
+//! is what makes that share cheap (refcount bump, no plan-tree clone).
+//!
+//! No `Clone`/`Debug`/`PartialEq` derives — deriving `Debug` would require
+//! `dyn PhysicalPlan: Debug`, which we deliberately don't require (operators
+//! implement `Display` instead).
 
 use crate::physical_plan::PhysicalPlan;
+use std::sync::Arc;
 
 /*
  message Task {
@@ -29,7 +36,7 @@ pub struct Task {
     pub stage_id: i32,
     pub task_id: i32,
     pub partition_id: i32,
-    pub plan: Box<dyn PhysicalPlan>,
+    pub plan: Arc<dyn PhysicalPlan>,
 }
 
 impl Task {
@@ -38,7 +45,7 @@ impl Task {
         stage_id: i32,
         task_id: i32,
         partition_id: i32,
-        plan: Box<dyn PhysicalPlan>,
+        plan: Arc<dyn PhysicalPlan>,
     ) -> Self {
         Self {
             job_uuid: job_uuid.into(),

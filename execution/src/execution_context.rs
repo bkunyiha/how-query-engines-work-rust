@@ -31,13 +31,10 @@ use std::sync::Arc;
 use datasource::{CsvDataSource, DataSource};
 use datatypes::RecordBatch;
 use logical_plan::{DataFrame, LogicalPlan, Scan};
-use optimizer::optimizer::Optimizer;
+use optimizer::Optimizer;
 use query_planner::QueryPlanner;
-use sql::expressions::SqlExpr;
-use sql::pratt_parser::PrattParser; // brings the `parse` method into scope
-use sql::sql_parser::SqlParser;
-use sql::sql_planner::SqlPlanner;
-use sql::sql_tokenizer::SqlTokenizer;
+// `PrattParser` brings the `parse` method into scope for `SqlParser`.
+use sql::{PrattParser, SqlExpr, SqlParser, SqlPlanner, SqlTokenizer};
 
 /// Default CSV batch size when `rquery.csv.batchSize` is unset. Kotlin: `"1024"`.
 const DEFAULT_BATCH_SIZE: usize = 1024;

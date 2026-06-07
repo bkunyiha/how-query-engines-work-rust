@@ -13,16 +13,17 @@
 
 use crate::physical_plan::PhysicalPlan;
 use datatypes::{record_batch, ArrowVectorBuilder, ColumnVector, RecordBatch, Schema};
+use std::sync::Arc;
 
 /// Execute a limit. Kotlin `LimitExec(val input: PhysicalPlan, val limit: Int)`
 /// (`Int` → `usize`, a row count).
 pub struct LimitExec {
-    pub input: Box<dyn PhysicalPlan>,
+    pub input: Arc<dyn PhysicalPlan>,
     pub limit: usize,
 }
 
 impl LimitExec {
-    pub fn new(input: Box<dyn PhysicalPlan>, limit: usize) -> Self {
+    pub fn new(input: Arc<dyn PhysicalPlan>, limit: usize) -> Self {
         Self { input, limit }
     }
 }
@@ -57,8 +58,26 @@ impl PhysicalPlan for LimitExec {
         }))
     }
 
-    fn children(&self) -> Vec<&dyn PhysicalPlan> {
-        vec![self.input.as_ref()]
+    fn children(&self) -> Vec<&Arc<dyn PhysicalPlan>> {
+        vec![&self.input]
+    }
+
+    /// Rebuild this limit with a new input child. See the trait-level
+    /// `PhysicalPlan::with_new_children` doc for the general rewrite pattern.
+    ///
+    /// Arity 1: a limit has one input. `into_iter().next().unwrap()` consumes
+    /// the length-1 children vec and takes ownership of that single Arc. The
+    /// `limit` budget is reused — it's part of this operator's definition, not
+    /// the child's.
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn PhysicalPlan>>,
+    ) -> Arc<dyn PhysicalPlan> {
+        assert_eq!(children.len(), 1, "LimitExec expects exactly 1 child");
+        Arc::new(LimitExec::new(
+            children.into_iter().next().unwrap(),
+            self.limit,
+        ))
     }
 }
 
@@ -135,7 +154,7 @@ mod tests {
     fn limit_truncates_to_budget() {
         let ds = employee_ds();
         let scan = ScanExec::new(Arc::clone(&ds), all_columns(&ds));
-        let limited = LimitExec::new(Box::new(scan), 3);
+        let limited = LimitExec::new(Arc::new(scan), 3);
         assert_eq!(total_rows(&limited), 3);
     }
 
@@ -143,7 +162,7 @@ mod tests {
     fn limit_above_total_keeps_everything() {
         let ds = employee_ds();
         let scan = ScanExec::new(Arc::clone(&ds), all_columns(&ds));
-        let limited = LimitExec::new(Box::new(scan), 100);
+        let limited = LimitExec::new(Arc::new(scan), 100);
         assert_eq!(total_rows(&limited), 4);
     }
 
@@ -154,7 +173,7 @@ mod tests {
         // Output schema is just the first column (id).
         let schema = scan.schema().project(&[0]);
         let proj = ProjectionExec::new(
-            Box::new(scan),
+            Arc::new(scan),
             schema,
             vec![Arc::new(ColumnExpression::new(0))],
         );
@@ -174,7 +193,7 @@ mod tests {
             Arc::new(ColumnExpression::new(0)),
             Arc::new(LiteralLongExpression::new(2)),
         );
-        let selection = SelectionExec::new(Box::new(scan), Arc::new(predicate));
+        let selection = SelectionExec::new(Arc::new(scan), Arc::new(predicate));
         assert_eq!(total_rows(&selection), 2);
         // Selection preserves the schema (all six columns).
         assert_eq!(selection.schema().fields.len(), 6);
@@ -186,7 +205,7 @@ mod tests {
         let ds = employee_ds();
         let scan = ScanExec::new(Arc::clone(&ds), all_columns(&ds));
         let selection = SelectionExec::new(
-            Box::new(scan),
+            Arc::new(scan),
             Arc::new(GtExpression::new(
                 Arc::new(ColumnExpression::new(0)),
                 Arc::new(LiteralLongExpression::new(2)),
@@ -194,11 +213,11 @@ mod tests {
         );
         let project_schema = selection.schema().project(&[0]);
         let projection = ProjectionExec::new(
-            Box::new(selection),
+            Arc::new(selection),
             project_schema,
             vec![Arc::new(ColumnExpression::new(0))],
         );
-        let limited = LimitExec::new(Box::new(projection), 1);
+        let limited = LimitExec::new(Arc::new(projection), 1);
 
         let batches: Vec<_> = limited.execute().collect();
         let rows: usize = batches.iter().map(|b| b.num_rows()).sum();

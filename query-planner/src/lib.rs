@@ -7,7 +7,7 @@
 //! `QueryPlanner.kt`.
 //!
 //! Smallest module — a single `QueryPlanner` type with two `match` functions:
-//! `create_physical_plan(&LogicalPlan) -> Box<dyn PhysicalPlan>` and
+//! `create_physical_plan(&LogicalPlan) -> Arc<dyn PhysicalPlan>` and
 //! `create_physical_expr(&LogicalExpr, &LogicalPlan) -> Arc<dyn Expression>`.
 //!
 //! ## Status

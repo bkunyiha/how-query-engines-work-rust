@@ -1,6 +1,6 @@
 //! Port of `kquery/protobuf/src/main/kotlin/PhysicalPlanDeserializer.kt`.
 //!
-//! `pb::PhysicalPlanNode` → `Box<dyn PhysicalPlan>`,
+//! `pb::PhysicalPlanNode` → `Arc<dyn PhysicalPlan>`,
 //! `pb::PhysicalExprNode` → `Arc<dyn Expression>`, and the inverses of every
 //! conversion in `physical_plan_serializer.rs`.
 //!
@@ -47,9 +47,9 @@ use physical_plan::{
 use arrow_schema::DataType;
 use std::sync::Arc;
 
-/// `pb::PhysicalPlanNode` → `Box<dyn PhysicalPlan>`.
+/// `pb::PhysicalPlanNode` → `Arc<dyn PhysicalPlan>`.
 /// Kotlin `fromProto(node: PhysicalPlanNode): PhysicalPlan`.
-pub fn deserialize_physical_plan(node: &pb::PhysicalPlanNode) -> Box<dyn PhysicalPlan> {
+pub fn deserialize_physical_plan(node: &pb::PhysicalPlanNode) -> Arc<dyn PhysicalPlan> {
     use pb::physical_plan_node::PlanType;
     match node.plan_type.as_ref() {
         Some(PlanType::Scan(scan)) => {
@@ -61,7 +61,7 @@ pub fn deserialize_physical_plan(node: &pb::PhysicalPlanNode) -> Box<dyn Physica
                 "parquet" => Arc::new(ParquetDataSource::new(&scan.path)),
                 other => panic!("Unsupported file format: {other:?}"),
             };
-            Box::new(ScanExec::new(ds, scan.projection.clone()))
+            Arc::new(ScanExec::new(ds, scan.projection.clone()))
         }
         Some(PlanType::Projection(proj)) => {
             let input = deserialize_physical_plan(
@@ -71,7 +71,7 @@ pub fn deserialize_physical_plan(node: &pb::PhysicalPlanNode) -> Box<dyn Physica
                 proj.schema.as_ref().expect("ProjectionExecNode.schema unset"),
             );
             let expr = proj.expr.iter().map(deserialize_physical_expr).collect();
-            Box::new(ProjectionExec::new(input, schema, expr))
+            Arc::new(ProjectionExec::new(input, schema, expr))
         }
         Some(PlanType::Selection(sel)) => {
             let input = deserialize_physical_plan(
@@ -80,7 +80,7 @@ pub fn deserialize_physical_plan(node: &pb::PhysicalPlanNode) -> Box<dyn Physica
             let expr = deserialize_physical_expr(
                 sel.expr.as_ref().expect("SelectionExecNode.expr unset"),
             );
-            Box::new(SelectionExec::new(input, expr))
+            Arc::new(SelectionExec::new(input, expr))
         }
         Some(PlanType::HashAggregate(agg)) => {
             let input = deserialize_physical_plan(
@@ -100,7 +100,7 @@ pub fn deserialize_physical_plan(node: &pb::PhysicalPlanNode) -> Box<dyn Physica
                 agg.schema.as_ref().expect("HashAggregateExecNode.schema unset"),
             );
             let mode = aggregate_mode_from_proto(agg.mode);
-            Box::new(HashAggregateExec::new_with_mode(
+            Arc::new(HashAggregateExec::new_with_mode(
                 input,
                 group_expr,
                 aggregate_expr,
@@ -117,7 +117,7 @@ pub fn deserialize_physical_plan(node: &pb::PhysicalPlanNode) -> Box<dyn Physica
                 .iter()
                 .map(deserialize_physical_expr)
                 .collect();
-            Box::new(ShuffleWriterExec::new(
+            Arc::new(ShuffleWriterExec::new(
                 input,
                 partition_expr,
                 sw.job_uuid.clone(),
@@ -134,7 +134,7 @@ pub fn deserialize_physical_plan(node: &pb::PhysicalPlanNode) -> Box<dyn Physica
                 .iter()
                 .map(deserialize_shuffle_location)
                 .collect();
-            Box::new(ShuffleReaderExec::new(schema, locations))
+            Arc::new(ShuffleReaderExec::new(schema, locations))
         }
         None => panic!("Failed to parse physical plan node: plan_type unset"),
     }
@@ -228,6 +228,9 @@ pub fn deserialize_shuffle_location(loc: &pb::ShuffleLocation) -> ShuffleLocatio
 }
 
 /// `pb::TaskInfo` → `Task`. Kotlin `fromProto(task: TaskInfo)`.
+///
+/// `Task::plan` is `Arc<dyn PhysicalPlan>`, matching what
+/// [`deserialize_physical_plan`] now returns — no conversion needed.
 pub fn deserialize_task(task: &pb::TaskInfo) -> Task {
     Task::new(
         &task.job_uuid,

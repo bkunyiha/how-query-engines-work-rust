@@ -37,9 +37,33 @@ impl PhysicalPlan for ShuffleReaderExec {
         self.shuffle_schema.clone()
     }
 
-    fn children(&self) -> Vec<&dyn PhysicalPlan> {
+    fn children(&self) -> Vec<&std::sync::Arc<dyn PhysicalPlan>> {
         // A shuffle read is a leaf — its input is the previous stage's output.
         vec![]
+    }
+
+    /// Rebuild this shuffle reader with new children. See the trait-level
+    /// `PhysicalPlan::with_new_children` doc for the general rewrite pattern.
+    ///
+    /// Arity 0 (leaf): a shuffle reader has no input plan — its data comes
+    /// from `shuffle_locations` (local files via `ShuffleManager` or remote
+    /// executors via Arrow Flight). The incoming `children` vec is always
+    /// empty. We hand back `self` unchanged.
+    ///
+    /// Note: `DistributedPlanner::substitute_shuffle_reader` doesn't call this
+    /// method on a `ShuffleReaderExec` — it detects the type via `as_any` and
+    /// constructs a new `ShuffleReaderExec` with the injected locations
+    /// (because `with_new_children` reuses `self.shuffle_locations`, which is
+    /// the exact field the rewrite needs to change).
+    fn with_new_children(
+        self: std::sync::Arc<Self>,
+        children: Vec<std::sync::Arc<dyn PhysicalPlan>>,
+    ) -> std::sync::Arc<dyn PhysicalPlan> {
+        assert!(
+            children.is_empty(),
+            "ShuffleReaderExec is a leaf and expects no children"
+        );
+        self
     }
 
     fn execute(&self) -> Box<dyn Iterator<Item = RecordBatch>> {

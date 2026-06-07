@@ -64,15 +64,19 @@ impl QueryPlanner {
     }
 
     /// Create a physical plan from a logical plan. Kotlin `createPhysicalPlan`.
-    pub fn create_physical_plan(&self, plan: &LogicalPlan) -> Box<dyn PhysicalPlan> {
+    ///
+    /// Returns `Arc<dyn PhysicalPlan>` (not `Box`) — matches DataFusion's
+    /// `ExecutionPlan` shape, lets the planner Arc-share subtrees, and lets
+    /// `DistributedPlanner` rewrite plans via `with_new_children`.
+    pub fn create_physical_plan(&self, plan: &LogicalPlan) -> Arc<dyn PhysicalPlan> {
         match plan {
             LogicalPlan::Scan(s) => {
-                Box::new(ScanExec::new(s.data_source.clone(), s.projection.clone()))
+                Arc::new(ScanExec::new(s.data_source.clone(), s.projection.clone()))
             }
             LogicalPlan::Selection(s) => {
                 let input = self.create_physical_plan(&s.input);
                 let filter_expr = self.create_physical_expr(&s.expr, &s.input);
-                Box::new(SelectionExec::new(input, filter_expr))
+                Arc::new(SelectionExec::new(input, filter_expr))
             }
             LogicalPlan::Projection(p) => {
                 let input = self.create_physical_plan(&p.input);
@@ -83,10 +87,10 @@ impl QueryPlanner {
                     .collect();
                 let projection_schema =
                     Schema::new(p.expr.iter().map(|e| e.to_field(&p.input)).collect());
-                Box::new(ProjectionExec::new(input, projection_schema, projection_expr))
+                Arc::new(ProjectionExec::new(input, projection_schema, projection_expr))
             }
             LogicalPlan::Aggregate(a) => {
-                let input: Box<dyn PhysicalPlan> = self.create_physical_plan(&a.input);
+                let input = self.create_physical_plan(&a.input);
                 let group_expr: Vec<Arc<dyn Expression>> = a
                     .group_expr
                     .iter()
@@ -97,7 +101,7 @@ impl QueryPlanner {
                     .iter()
                     .map(|agg| self.create_aggregate_expr(agg, &a.input))
                     .collect();
-                Box::new(HashAggregateExec::new(
+                Arc::new(HashAggregateExec::new(
                     input,
                     group_expr,
                     aggregate_expr,
@@ -106,7 +110,7 @@ impl QueryPlanner {
             }
             LogicalPlan::Limit(l) => {
                 let input = self.create_physical_plan(&l.input);
-                Box::new(LimitExec::new(input, l.limit as usize))
+                Arc::new(LimitExec::new(input, l.limit as usize))
             }
             LogicalPlan::Join(j) => {
                 let left_plan = self.create_physical_plan(&j.left);
@@ -161,7 +165,7 @@ impl QueryPlanner {
                     })
                     .collect();
 
-                Box::new(HashJoinExec::new(
+                Arc::new(HashJoinExec::new(
                     left_plan,
                     right_plan,
                     j.join_type.clone(),
@@ -323,7 +327,7 @@ mod tests {
     use datatypes::arrow_types::{DOUBLE_TYPE, UINT32_TYPE};
     use datatypes::{Field, Schema};
     use logical_plan::{col, max, DataFrame, LogicalPlan, Scan};
-    use optimizer::optimizer::Optimizer;
+    use optimizer::Optimizer;
     use std::sync::Arc;
 
     #[test]
@@ -350,7 +354,7 @@ mod tests {
         // Root is a HashAggregateExec; the optimizer's sorted pushdown puts
         // max_fare at index 0 and passenger_count at index 1, so the group key is
         // #1 and the MAX argument is #0. (`format` is the free fn — `pretty()` is
-        // gated `where Self: Sized` and isn't callable on `Box<dyn PhysicalPlan>`.)
+        // gated `where Self: Sized` and isn't callable on `Arc<dyn PhysicalPlan>`.)
         let pretty = physical_plan::format(physical.as_ref());
         assert!(
             pretty.starts_with("HashAggregateExec: groupExpr=[#1], aggrExpr=[MAX(#0)], mode=Complete"),

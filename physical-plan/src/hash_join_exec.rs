@@ -26,11 +26,12 @@ use datatypes::{
 };
 use logical_plan::JoinType;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 /// Hash join physical operator. Kotlin `HashJoinExec`.
 pub struct HashJoinExec {
-    pub left: Box<dyn PhysicalPlan>,
-    pub right: Box<dyn PhysicalPlan>,
+    pub left: Arc<dyn PhysicalPlan>,
+    pub right: Arc<dyn PhysicalPlan>,
     pub join_type: JoinType,
     pub left_keys: Vec<usize>,
     pub right_keys: Vec<usize>,
@@ -41,8 +42,8 @@ pub struct HashJoinExec {
 impl HashJoinExec {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        left: Box<dyn PhysicalPlan>,
-        right: Box<dyn PhysicalPlan>,
+        left: Arc<dyn PhysicalPlan>,
+        right: Arc<dyn PhysicalPlan>,
         join_type: JoinType,
         left_keys: Vec<usize>,
         right_keys: Vec<usize>,
@@ -117,12 +118,51 @@ impl PhysicalPlan for HashJoinExec {
         self.schema.clone()
     }
 
-    fn children(&self) -> Vec<&dyn PhysicalPlan> {
-        vec![self.left.as_ref(), self.right.as_ref()]
+    fn children(&self) -> Vec<&Arc<dyn PhysicalPlan>> {
+        vec![&self.left, &self.right]
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+
+    /// Rebuild this join with new left and right inputs. See the trait-level
+    /// `PhysicalPlan::with_new_children` doc for the general rewrite pattern.
+    ///
+    /// Arity 2: a hash join has two inputs, conventionally `[left, right]` in
+    /// `children()` order. The incoming `children` vec is therefore length 2.
+    /// We drain it via `into_iter()` and take each element in order — the
+    /// first is the left (probe) side, the second is the right (build) side.
+    /// Ordering matters: swapping left and right changes the hash table's
+    /// key columns and would silently produce a different join.
+    ///
+    /// Both new inputs are taken by owned move (no Arc clones). All non-input
+    /// fields (`join_type`, key indices, output schema, exclude set) are
+    /// reused — they're properties of the join definition, not the children.
+    ///
+    /// DataFusion equivalently writes `children[0].clone()` / `children[1].clone()`,
+    /// which trades two atomic refcount bumps for terseness. Both are correct.
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn PhysicalPlan>>,
+    ) -> Arc<dyn PhysicalPlan> {
+        assert_eq!(
+            children.len(),
+            2,
+            "HashJoinExec expects exactly 2 children (left, right)"
+        );
+        let mut iter = children.into_iter();
+        let left = iter.next().unwrap();
+        let right = iter.next().unwrap();
+        Arc::new(HashJoinExec::new(
+            left,
+            right,
+            self.join_type.clone(),
+            self.left_keys.clone(),
+            self.right_keys.clone(),
+            self.schema.clone(),
+            self.right_columns_to_exclude.clone(),
+        ))
     }
 
     fn execute(&self) -> Box<dyn Iterator<Item = RecordBatch>> {
@@ -242,10 +282,17 @@ mod tests {
         fn execute(&self) -> Box<dyn Iterator<Item = RecordBatch>> {
             Box::new(self.batches.clone().into_iter())
         }
-        fn children(&self) -> Vec<&dyn PhysicalPlan> {
+        fn children(&self) -> Vec<&Arc<dyn PhysicalPlan>> {
             vec![]
         }
         fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+        fn with_new_children(
+            self: Arc<Self>,
+            children: Vec<Arc<dyn PhysicalPlan>>,
+        ) -> Arc<dyn PhysicalPlan> {
+            assert!(children.is_empty());
             self
         }
     }
@@ -334,8 +381,8 @@ mod tests {
     #[test]
     fn inner_join_on_id() {
         let join = HashJoinExec::new(
-            Box::new(left_exec()),
-            Box::new(right_exec()),
+            Arc::new(left_exec()),
+            Arc::new(right_exec()),
             JoinType::Inner,
             vec![0],
             vec![0],
@@ -356,8 +403,8 @@ mod tests {
     #[test]
     fn left_join_keeps_unmatched_left() {
         let join = HashJoinExec::new(
-            Box::new(left_exec()),
-            Box::new(right_exec()),
+            Arc::new(left_exec()),
+            Arc::new(right_exec()),
             JoinType::Left,
             vec![0],
             vec![0],

@@ -44,14 +44,11 @@ use rayon::prelude::*;
 use datasource::{CsvDataSource, DataSource};
 use datatypes::{RecordBatch, Schema};
 use logical_plan::{DataFrame, LogicalPlan, Scan};
-use optimizer::optimizer::Optimizer;
+use optimizer::Optimizer;
 use physical_plan::{AggregateMode, HashAggregateExec, PhysicalPlan};
 use query_planner::QueryPlanner;
-use sql::expressions::SqlExpr;
-use sql::pratt_parser::PrattParser; // brings the `parse` method into scope
-use sql::sql_parser::SqlParser;
-use sql::sql_planner::SqlPlanner;
-use sql::sql_tokenizer::SqlTokenizer;
+// `PrattParser` brings the `parse` method into scope for `SqlParser`.
+use sql::{PrattParser, SqlExpr, SqlParser, SqlPlanner, SqlTokenizer};
 
 /// Default CSV batch size when `rquery.csv.batchSize` is unset. Kotlin: `"1024"`.
 const DEFAULT_BATCH_SIZE: usize = 1024;
@@ -204,7 +201,7 @@ fn execute_partial_aggregate(
     batches: Vec<RecordBatch>,
 ) -> Vec<RecordBatch> {
     let partial = HashAggregateExec::new_with_mode(
-        Box::new(InMemoryPlan::new(aggregate.input.schema(), batches)),
+        Arc::new(InMemoryPlan::new(aggregate.input.schema(), batches)),
         aggregate.group_expr.clone(),
         aggregate.aggregate_expr.clone(),
         aggregate.schema.clone(),
@@ -221,7 +218,7 @@ fn execute_final_aggregate(
     partial_batches: Vec<RecordBatch>,
 ) -> Box<dyn Iterator<Item = RecordBatch>> {
     let final_aggregate = HashAggregateExec::new_with_mode(
-        Box::new(InMemoryPlan::new(aggregate.schema.clone(), partial_batches)),
+        Arc::new(InMemoryPlan::new(aggregate.schema.clone(), partial_batches)),
         aggregate.group_expr.clone(),
         aggregate.aggregate_expr.clone(),
         aggregate.schema.clone(),
@@ -254,7 +251,7 @@ impl PhysicalPlan for InMemoryPlan {
         self.schema.clone()
     }
 
-    fn children(&self) -> Vec<&dyn PhysicalPlan> {
+    fn children(&self) -> Vec<&Arc<dyn PhysicalPlan>> {
         Vec::new()
     }
 
@@ -264,6 +261,17 @@ impl PhysicalPlan for InMemoryPlan {
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn PhysicalPlan>>,
+    ) -> Arc<dyn PhysicalPlan> {
+        assert!(
+            children.is_empty(),
+            "InMemoryPlan is a leaf and expects no children"
+        );
         self
     }
 }

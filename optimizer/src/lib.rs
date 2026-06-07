@@ -21,3 +21,10 @@
 // ==============================================================
 pub mod optimizer;
 pub mod projection_push_down_rule;
+
+// ==============================================================
+// Re-exports for ergonomic `use optimizer::*;`. Mirrors the pattern
+// used in physical-plan / datatypes / etc.
+// ==============================================================
+pub use optimizer::{Optimizer, OptimizerRule};
+pub use projection_push_down_rule::ProjectionPushDownRule;

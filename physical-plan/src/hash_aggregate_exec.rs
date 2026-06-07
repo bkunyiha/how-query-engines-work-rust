@@ -36,7 +36,7 @@ use std::sync::Arc;
 
 /// Group-by hash aggregation. Kotlin `HashAggregateExec`.
 pub struct HashAggregateExec {
-    pub input: Box<dyn PhysicalPlan>,
+    pub input: Arc<dyn PhysicalPlan>,
     pub group_expr: Vec<Arc<dyn Expression>>,
     pub aggregate_expr: Vec<Arc<dyn AggregateExpression>>,
     pub schema: Schema,
@@ -47,7 +47,7 @@ impl HashAggregateExec {
     /// Single-node (`Complete`) aggregation — the common case, matching Kotlin's
     /// `mode: AggregateMode = AggregateMode.COMPLETE` default argument.
     pub fn new(
-        input: Box<dyn PhysicalPlan>,
+        input: Arc<dyn PhysicalPlan>,
         group_expr: Vec<Arc<dyn Expression>>,
         aggregate_expr: Vec<Arc<dyn AggregateExpression>>,
         schema: Schema,
@@ -57,7 +57,7 @@ impl HashAggregateExec {
 
     /// Construct with an explicit [`AggregateMode`] (for distributed execution).
     pub fn new_with_mode(
-        input: Box<dyn PhysicalPlan>,
+        input: Arc<dyn PhysicalPlan>,
         group_expr: Vec<Arc<dyn Expression>>,
         aggregate_expr: Vec<Arc<dyn AggregateExpression>>,
         schema: Schema,
@@ -78,8 +78,8 @@ impl PhysicalPlan for HashAggregateExec {
         self.schema.clone()
     }
 
-    fn children(&self) -> Vec<&dyn PhysicalPlan> {
-        vec![self.input.as_ref()]
+    fn children(&self) -> Vec<&Arc<dyn PhysicalPlan>> {
+        vec![&self.input]
     }
 
     /// Override the [`PhysicalPlan::as_any`] hook so `ParallelContext` can
@@ -87,6 +87,36 @@ impl PhysicalPlan for HashAggregateExec {
     /// split (Kotlin's `when (plan) { is HashAggregateExec -> … }`).
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+
+    /// Rebuild this aggregate with a new input child. See the trait-level
+    /// `PhysicalPlan::with_new_children` doc for the general rewrite pattern.
+    ///
+    /// Arity 1: an aggregate has one input (the relation being grouped).
+    /// `into_iter().next().unwrap()` consumes the length-1 children vec and
+    /// takes ownership of that single Arc.
+    ///
+    /// We use `new_with_mode` (not `new`) so the `mode` (Complete / Partial /
+    /// Final) is preserved through the rewrite — the distributed planner sets
+    /// Partial/Final modes during stage splitting (`DistributedPlanner::plan`)
+    /// and a subsequent rewrite like `substitute_shuffle_reader` must not
+    /// silently demote the operator back to Complete.
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn PhysicalPlan>>,
+    ) -> Arc<dyn PhysicalPlan> {
+        assert_eq!(
+            children.len(),
+            1,
+            "HashAggregateExec expects exactly 1 child"
+        );
+        Arc::new(HashAggregateExec::new_with_mode(
+            children.into_iter().next().unwrap(),
+            self.group_expr.clone(),
+            self.aggregate_expr.clone(),
+            self.schema.clone(),
+            self.mode,
+        ))
     }
 
     fn execute(&self) -> Box<dyn Iterator<Item = RecordBatch>> {
@@ -296,7 +326,7 @@ mod tests {
         ]);
         // employee.csv columns: 0=id 1=first_name 2=last_name 3=state 4=job_title 5=salary
         let agg = HashAggregateExec::new(
-            Box::new(scan),
+            Arc::new(scan),
             vec![Arc::new(ColumnExpression::new(3))],
             vec![
                 Arc::new(MinExpression::new(Arc::new(ColumnExpression::new(5)))),

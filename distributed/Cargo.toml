@@ -8,20 +8,32 @@ authors.workspace      = true
 rust-version.workspace = true
 
 [dependencies]
-# External — Arrow Flight client is the wire-level transport for sending tasks
-# to remote executors. No in-process dependency on `flight-server` or `client`.
-arrow            = { workspace = true }
-arrow-flight     = { workspace = true }
+# External
+# `tracing` matches DataFusion's logging idiom (replaces kquery's `java.util.logging.Logger`
+# in `Scheduler.kt`).
+# `uuid` mints fresh `jobUuid` strings — analogue of `java.util.UUID.randomUUID()`.
+# No `arrow-flight` or `protobuf` dep — kquery's distributed module imports neither.
+# The Flight transport lives behind the `ExecutorClient` trait (in `scheduler.rs`),
+# whose implementation lives in `flight-server` / `client` (modules 13 / 15).
+tracing        = { workspace = true }
+uuid           = { workspace = true }
 
-# Internal — nine siblings, matching the upstream Kotlin distributed/build.gradle.kts
-# dependency graph. Verified against the kquery source per
-# ../ARCHITECTURE.md §1.4 (empirical findings table).
-datatypes      = { path = "../datatypes" }
+# Internal — exactly the siblings the kquery distributed module imports.
+# Verified by grep against `kquery/distributed/src/main/kotlin/`:
+#   - datasource (CsvDataSource in DistributedContext)
+#   - datatypes (RecordBatch return type)
+#   - logical-plan (LogicalPlan/Scan, DataFrame for the context facade)
+#   - physical-plan (PhysicalPlan / ShuffleLocation / Task / ShuffleWriterExec /
+#     ShuffleReaderExec / HashAggregateExec / AggregateMode — used by DistributedPlanner)
+#   - optimizer (Optimizer in DistributedContext.execute)
+#   - query-planner (QueryPlanner in DistributedContext.execute)
+#   - sql (SqlParser / SqlPlanner / SqlSelect / SqlTokenizer in DistributedContext.sql)
+# `execution` is NOT a dependency — kquery's distributed module does not import
+# anything from `execution/`; it builds its own context type.
 datasource     = { path = "../datasource" }
+datatypes      = { path = "../datatypes" }
 logical-plan   = { path = "../logical-plan" }
 physical-plan  = { path = "../physical-plan" }
-query-planner  = { path = "../query-planner" }
 optimizer      = { path = "../optimizer" }
-execution      = { path = "../execution" }
+query-planner  = { path = "../query-planner" }
 sql            = { path = "../sql" }
-protobuf       = { path = "../protobuf" }

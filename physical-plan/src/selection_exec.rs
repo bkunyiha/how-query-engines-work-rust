@@ -19,12 +19,12 @@ use std::sync::Arc;
 /// Execute a selection (row filter). Kotlin
 /// `SelectionExec(val input: PhysicalPlan, val expr: Expression)`.
 pub struct SelectionExec {
-    pub input: Box<dyn PhysicalPlan>,
+    pub input: Arc<dyn PhysicalPlan>,
     pub expr: Arc<dyn Expression>,
 }
 
 impl SelectionExec {
-    pub fn new(input: Box<dyn PhysicalPlan>, expr: Arc<dyn Expression>) -> Self {
+    pub fn new(input: Arc<dyn PhysicalPlan>, expr: Arc<dyn Expression>) -> Self {
         Self { input, expr }
     }
 }
@@ -47,12 +47,35 @@ impl PhysicalPlan for SelectionExec {
         }))
     }
 
-    fn children(&self) -> Vec<&dyn PhysicalPlan> {
-        vec![self.input.as_ref()]
+    fn children(&self) -> Vec<&Arc<dyn PhysicalPlan>> {
+        vec![&self.input]
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+
+    /// Rebuild this selection with a new input child. See the trait-level
+    /// `PhysicalPlan::with_new_children` doc for the general rewrite pattern.
+    ///
+    /// Arity 1: a selection has one input (the relation being filtered). The
+    /// incoming `children` vec is therefore always length 1; `into_iter().next()
+    /// .unwrap()` takes ownership of that single Arc without an atomic refcount
+    /// bump. The predicate `expr` is reused — it doesn't depend on which
+    /// concrete input feeds the selection.
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn PhysicalPlan>>,
+    ) -> Arc<dyn PhysicalPlan> {
+        assert_eq!(
+            children.len(),
+            1,
+            "SelectionExec expects exactly 1 child"
+        );
+        Arc::new(SelectionExec::new(
+            children.into_iter().next().unwrap(),
+            Arc::clone(&self.expr),
+        ))
     }
 }
 

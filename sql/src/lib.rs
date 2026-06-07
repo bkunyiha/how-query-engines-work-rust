@@ -27,3 +27,14 @@ pub mod sql_planner;
 pub mod sql_tokenizer;
 pub mod token_stream;
 pub mod tokens;
+
+// ==============================================================
+// Re-exports for ergonomic `use sql::*;`. The Pratt parser trait must
+// be re-exported alongside `SqlParser` because parse() lives on the
+// trait — anyone calling `parser.parse(0)` needs both in scope.
+// ==============================================================
+pub use expressions::SqlExpr;
+pub use pratt_parser::PrattParser;
+pub use sql_parser::SqlParser;
+pub use sql_planner::SqlPlanner;
+pub use sql_tokenizer::SqlTokenizer;

@@ -41,6 +41,10 @@ arrow         = "55"
 arrow-array   = "55"
 arrow-schema  = "55"
 arrow-flight  = "55"
+# Arrow IPC reader/writer — used by `physical-plan::ShuffleManager` to
+# serialise per-partition shuffle output to local files. Same kquery shape
+# as the Kotlin `ArrowFileWriter`/`ArrowFileReader` calls.
+arrow-ipc     = "55"
 parquet       = "55"
 
 # Data-parallelism — the faithful Rust substitution for Kotlin coroutines in
@@ -83,6 +87,16 @@ thiserror     = "1"
 # Logging
 log           = "0.4"
 env_logger    = "0.11"
+# `tracing` is DataFusion's logging choice. Used by `distributed/` (the analogue of
+# Kotlin's `java.util.logging.Logger` in `Scheduler.kt`) so rquery readers see the
+# same macro names (`info!`/`debug!`/`warn!`) they will meet at DataFusion source level.
+# `tracing-subscriber` is the consumer side; left as a binary's choice, not pulled
+# in here as a workspace dep.
+tracing       = "0.1"
+
+# UUID generation — analogue of Kotlin's `java.util.UUID.randomUUID()`. Used by
+# `distributed::Scheduler` to mint a fresh `jobUuid` per query.
+uuid          = { version = "1", features = ["v4"] }
 
 # Testing helpers
 pretty_assertions = "1"

@@ -36,7 +36,7 @@ use datatypes::arrow_types::FLOAT_TYPE;
 use datatypes::record_batch::to_csv;
 use execution::ExecutionContext;
 use logical_plan::{cast, col, format, max};
-use optimizer::optimizer::Optimizer;
+use optimizer::Optimizer;
 
 /// Hardcoded NYC yellow-taxi 2019-01 path. Matches `NYCTaxi.kt` verbatim; see
 /// the module-doc for how to obtain the file.

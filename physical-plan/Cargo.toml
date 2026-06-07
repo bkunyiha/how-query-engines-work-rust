@@ -15,6 +15,9 @@ rust-version.workspace = true
 # types at different versions and a confusing "expected DataType, found DataType"
 # error. Matching what logical-plan / sql already do.
 arrow-schema  = { workspace = true }
+# `arrow-ipc` powers `ShuffleManager`'s local Arrow IPC file writer/reader.
+# Same shape as kquery's `ArrowFileWriter` / `ArrowFileReader` calls.
+arrow-ipc     = { workspace = true }
 datatypes     = { path = "../datatypes" }
 datasource    = { path = "../datasource" }
 logical-plan  = { path = "../logical-plan" }

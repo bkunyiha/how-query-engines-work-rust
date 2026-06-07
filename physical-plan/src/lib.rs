@@ -55,7 +55,7 @@
 //!
 //! ## Design — traits, not enums (the documented §4.6 deviation)
 //! `PhysicalPlan` and `Expression` are Rust **traits** referenced through
-//! `Box<dyn PhysicalPlan>` / `Arc<dyn Expression>`, *not* enums. This reverses the
+//! `Arc<dyn PhysicalPlan>` / `Arc<dyn Expression>`, *not* enums. This reverses the
 //! §3.1 "interface hierarchy → enum" rule applied to `logical_plan`, because the
 //! physical operator/expression set is large (28 files) and open in spirit. See
 //! the file-level docs and `TRANSLATION_NOTES.md` for the rationale.

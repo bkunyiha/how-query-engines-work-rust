@@ -12,8 +12,9 @@
 //! *open in spirit*: adding a new operator should mean adding a new file, not
 //! editing a central enum and every `match` over it. The Kotlin source models
 //! this with inheritance (`class ProjectionExec : PhysicalPlan`), so the faithful
-//! Rust port uses a **trait** referenced through `Box<dyn PhysicalPlan>`. The
-//! deviation is intentional and recorded in `TRANSLATION_NOTES.md`.
+//! Rust port uses a **trait** referenced through `Arc<dyn PhysicalPlan>` — same
+//! shape as DataFusion's `Arc<dyn ExecutionPlan>`. The deviation is intentional
+//! and recorded in `TRANSLATION_NOTES.md`.
 //!
 //! ## Translation note — `Sequence` → `Box<dyn Iterator>`
 //! Kotlin's `execute(): Sequence<RecordBatch>` is a lazy stream. The Rust analogue
@@ -21,12 +22,43 @@
 //! rewrite would return a `futures::Stream`; this faithful port stays synchronous,
 //! matching the Kotlin shape.)
 //!
+//! ## Translation note — `Arc<dyn PhysicalPlan>`, not `Box<dyn PhysicalPlan>`
+//! Every operator with an input field — `ProjectionExec`, `SelectionExec`,
+//! `LimitExec`, `HashAggregateExec`, `HashJoinExec`, `ShuffleWriterExec` —
+//! stores its child as `Arc<dyn PhysicalPlan>`. This is the structural
+//! precondition for the `DistributedPlanner` / `as_any` rewrite shape and
+//! for the `with_new_children` trait method below. The argument in one
+//! breath:
+//!
+//! `Box<dyn PhysicalPlan>` is uniquely owned and `dyn PhysicalPlan` is not
+//! `Clone` (trait objects aren't `Sized`, so `Clone: Sized` excludes them).
+//! `box_field.clone()` therefore does not compile. The only ways to use a
+//! Box-owned child without consuming the parent are to move out of the
+//! parent (destroying its identity at compile time) or to deep-clone the
+//! whole subtree (requires a workspace-wide deep-clone trait). Both
+//! rejected.
+//!
+//! `Arc<dyn PhysicalPlan>` is shared via an atomic refcount.
+//! `arc_field.clone()` compiles and bumps the refcount by one atomic op —
+//! no deep copy, no new operator instance, both Arcs point at the same
+//! heap value. The `DistributedPlanner` accesses operators through
+//! borrowed `&HashAggregateExec` views returned by
+//! `plan.as_any().downcast_ref::<HashAggregateExec>()`; it can therefore
+//! produce owned children for newly-constructed operators by Arc-cloning
+//! the fields it needs (`agg.input.clone()`, `agg.group_expr.clone()`,
+//! `agg.aggregate_expr.clone()`) while leaving the original aggregate
+//! fully readable for the next step in the rewrite chain.
+//!
+//! This matches DataFusion's `Arc<dyn ExecutionPlan>` shape exactly. See
+//! `ARCHITECTURE.md` §4.6 ("Why `Arc`, not `Box`, for child fields") for
+//! the worked walkthrough and the call-site code.
+//!
 //! ## Translation note — `Send + Sync` for parallel execution (Module 8)
 //! `PhysicalPlan` (and its sibling expression traits) require `Send + Sync`.
 //! Kotlin's `ParallelContext` runs partial aggregates on multiple workers via
 //! coroutines (`runBlocking { async { … } }`); the faithful Rust substitution is
 //! `rayon` (ARCHITECTURE.md §3.9). rayon moves work onto a worker pool, so every
-//! value a worker touches — the `Box<dyn PhysicalPlan>` it runs and the
+//! value a worker touches — the `Arc<dyn PhysicalPlan>` it runs and the
 //! `Arc<dyn Expression>` / `Arc<dyn AggregateExpression>` it shares — must be
 //! `Send + Sync`. Adding the bound here propagates to `Expression`,
 //! `AggregateExpression` (physical-plan) and `DataSource` (datasource). It is
@@ -40,6 +72,7 @@
 
 use datatypes::{RecordBatch, Schema};
 use std::fmt;
+use std::sync::Arc;
 
 /// A physical plan represents an executable piece of code that will produce data.
 ///
@@ -56,10 +89,31 @@ pub trait PhysicalPlan: fmt::Display + Send + Sync {
 
     /// The children (inputs) of this plan, used to walk the operator tree.
     ///
-    /// Returns borrowed references rather than owned/cloned nodes: a parent owns
-    /// its child as `Box<dyn PhysicalPlan>`, and the tree walk only needs to read
-    /// them. Leaf operators (e.g. a scan) return an empty vec.
-    fn children(&self) -> Vec<&dyn PhysicalPlan>;
+    /// Returns borrowed `&Arc<dyn PhysicalPlan>` references — matches
+    /// DataFusion's `ExecutionPlan::children() -> Vec<&Arc<dyn ExecutionPlan>>`.
+    /// Callers that only need to *read* a child (printing, schema inspection,
+    /// recursive walks) use `child.as_ref()`. Callers that want to *take
+    /// owned share* of a child for tree rewrites (`with_new_children`, etc.)
+    /// use `child.clone()` — a cheap Arc refcount bump (see the module-level
+    /// "Arc<dyn PhysicalPlan>, not Box" note). Leaf operators (e.g. a scan)
+    /// return an empty vec.
+    fn children(&self) -> Vec<&Arc<dyn PhysicalPlan>>;
+
+    /// Reassemble this plan with a different set of children. Used by tree
+    /// rewrites: a generic walk that wants to transform some descendant
+    /// recurses on each child, then asks every node it walked through to
+    /// rebuild itself with the (possibly transformed) child set.
+    ///
+    /// Same shape as DataFusion's `ExecutionPlan::with_new_children` — the
+    /// `self: Arc<Self>` receiver consumes the Arc, the impl reuses any
+    /// non-child fields (schema, expressions, etc.) and builds a new operator
+    /// with the supplied children, returning a fresh `Arc<dyn PhysicalPlan>`.
+    /// Panics on the wrong number of children (rquery uses panic-style error
+    /// handling per ARCHITECTURE.md §3.6; DataFusion returns `Result`).
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn PhysicalPlan>>,
+    ) -> Arc<dyn PhysicalPlan>;
 
     /// Type-erased self-reference for runtime downcasting. Kotlin's
     /// `when (plan) { is XExec -> … }` becomes the standard Rust idiom
@@ -90,7 +144,8 @@ pub fn format(plan: &dyn PhysicalPlan) -> String {
         out.push_str(&plan.to_string());
         out.push('\n');
         for child in plan.children() {
-            go(child, indent + 1, out);
+            // `child` is `&Arc<dyn PhysicalPlan>`; `as_ref()` gives `&dyn PhysicalPlan`.
+            go(child.as_ref(), indent + 1, out);
         }
     }
     let mut out = String::new();

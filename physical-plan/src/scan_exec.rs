@@ -38,13 +38,29 @@ impl PhysicalPlan for ScanExec {
         self.ds.scan(&self.projection)
     }
 
-    fn children(&self) -> Vec<&dyn PhysicalPlan> {
+    fn children(&self) -> Vec<&Arc<dyn PhysicalPlan>> {
         // A scan is a leaf — no inputs.
         vec![]
     }
 
     /// See the `PhysicalPlan::as_any` docstring for the rationale.
     fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    /// Rebuild this scan with new children. See the trait-level
+    /// `PhysicalPlan::with_new_children` doc for the general rewrite pattern.
+    ///
+    /// Arity 0 (leaf): a scan has no input — it reads directly from a
+    /// `DataSource`. The incoming `children` vec is always empty, so there's
+    /// nothing to substitute. We hand back `self` unchanged (it's already an
+    /// `Arc<Self>`, which is exactly the return type). No new allocation
+    /// happens — the refcount just stays where it was.
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn PhysicalPlan>>,
+    ) -> Arc<dyn PhysicalPlan> {
+        assert!(children.is_empty(), "ScanExec is a leaf and expects no children");
         self
     }
 }
