@@ -31,7 +31,7 @@ use uuid::Uuid;
 ///
 /// The scheduler talks to remote executors only through this trait, so it can
 /// be unit-tested against an in-process mock (see `SchedulerTest`). The real
-/// implementation lives in `flight-server` / `client` (module 13/15).
+/// implementation lives in `flight-server` / `client` (modules 13/14).
 ///
 /// ## Dual return types — by design
 /// Intermediate tasks produce **file references** (shuffle output written to
@@ -133,14 +133,14 @@ impl<C: ExecutorClient> Scheduler<C> {
             if updated_stage.is_final_stage {
                 return self.execute_final_stage(&job_uuid, updated_stage);
             } else {
-                let stage_id = updated_stage.stage_id;
+                let current_stage_id = updated_stage.stage_id;
                 let locations: Vec<ShuffleLocation> = self.execute_stage(&job_uuid, updated_stage);
                 debug!(
                     "Stage {} produced {} shuffle locations",
-                    stage_id,
+                    current_stage_id,
                     locations.len()
                 );
-                locations_by_stage.insert(stage_id, locations);
+                locations_by_stage.insert(current_stage_id, locations);
             }
         }
 

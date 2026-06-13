@@ -244,7 +244,7 @@ impl fmt::Display for LiteralIntervalDaysExpression {
 ///
 /// Single-node (`AggregateMode::Complete`) aggregation never uses this type — it
 /// only calls `accumulate` + `final_value`. It exists for the distributed path
-/// (module 14), which is why the variants beyond `Scalar` aren't exercised yet.
+/// (module 15), which is why the variants beyond `Scalar` aren't exercised yet.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AccumulatorValue {
     /// A plain scalar — MIN/MAX/SUM/COUNT partial state.

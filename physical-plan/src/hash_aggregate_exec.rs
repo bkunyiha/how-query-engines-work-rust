@@ -18,7 +18,7 @@
 //!
 //! ## Translation note — modes
 //! Single-node `Complete` (the default, and the only mode used until the
-//! `distributed` module 13/14) calls `accumulate` + `final_value`. `Final` merges
+//! `distributed` module 15) calls `accumulate` + `final_value`. `Final` merges
 //! incoming partial state; `Partial` would emit intermediate state. AVG's
 //! intermediate state is compound ([`AccumulatorValue::AvgState`]) and cannot sit
 //! in a scalar output column, so a `Partial` AVG output panics until the
@@ -26,6 +26,7 @@
 
 use crate::aggregate_expression::AggregateExpression;
 use crate::aggregate_mode::AggregateMode;
+use crate::executor_context::ExecutorContext;
 use crate::expressions::{Accumulator, AccumulatorValue, Expression};
 use crate::physical_plan::PhysicalPlan;
 use datatypes::{record_batch, ArrowVectorBuilder, ColumnVector, RecordBatch, ScalarValue, Schema};
@@ -119,11 +120,13 @@ impl PhysicalPlan for HashAggregateExec {
         ))
     }
 
-    fn execute(&self) -> Box<dyn Iterator<Item = RecordBatch>> {
-        // One accumulator list per group key.
+    fn execute(&self, ctx: &ExecutorContext) -> Box<dyn Iterator<Item = RecordBatch>> {
+        // Aggregate doesn't read ctx itself, but threads it through so that
+        // shuffle-bearing children (a `ShuffleReaderExec` under a Final-mode
+        // aggregate) get the per-executor state they need.
         let mut map: HashMap<GroupKey, Vec<Box<dyn Accumulator>>> = HashMap::new();
 
-        for batch in self.input.execute() {
+        for batch in self.input.execute(ctx) {
             // Evaluate the group-by and aggregate-input expressions once per batch.
             let group_keys: Vec<Box<dyn ColumnVector>> =
                 self.group_expr.iter().map(|e| e.evaluate(&batch)).collect();
@@ -336,7 +339,8 @@ mod tests {
             out_schema,
         );
 
-        let batches: Vec<_> = agg.execute().collect();
+        let ctx = ExecutorContext::new("test", "localhost", 0, "/tmp/rquery-test-ignored");
+        let batches: Vec<_> = agg.execute(&ctx).collect();
         assert_eq!(batches.len(), 1);
         let batch = &batches[0];
         assert_eq!(batch.num_rows(), 3); // groups: CA, CO, and the null-state row

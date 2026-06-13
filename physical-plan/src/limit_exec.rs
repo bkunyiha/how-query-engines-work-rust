@@ -11,6 +11,7 @@
 //! ends iteration as soon as the closure returns `None` — exactly the early-exit
 //! the Kotlin `break` provides.
 
+use crate::executor_context::ExecutorContext;
 use crate::physical_plan::PhysicalPlan;
 use datatypes::{record_batch, ArrowVectorBuilder, ColumnVector, RecordBatch, Schema};
 use std::sync::Arc;
@@ -37,11 +38,12 @@ impl PhysicalPlan for LimitExec {
         self
     }
 
-    fn execute(&self) -> Box<dyn Iterator<Item = RecordBatch>> {
+    fn execute(&self, ctx: &ExecutorContext) -> Box<dyn Iterator<Item = RecordBatch>> {
+        // Limit truncates input — no context use; pass through.
         let schema = self.input.schema();
         // `scan` carries `remaining` (the budget) across batches; returning `None`
         // ends the stream, mirroring the Kotlin coroutine's `break`.
-        Box::new(self.input.execute().scan(self.limit, move |remaining, batch| {
+        Box::new(self.input.execute(ctx).scan(self.limit, move |remaining, batch| {
             if *remaining == 0 {
                 return None;
             }
@@ -137,8 +139,15 @@ mod tests {
         ds.schema().fields.iter().map(|f| f.name.clone()).collect()
     }
 
+    /// Build a throwaway `ExecutorContext` for tests of operators that don't
+    /// use the context (everything except shuffle ops). The executor identity
+    /// is meaningless and the `shuffle_manager` is never read.
+    fn test_ctx() -> ExecutorContext {
+        ExecutorContext::new("test", "localhost", 0, "/tmp/rquery-test-ignored")
+    }
+
     fn total_rows(plan: &dyn PhysicalPlan) -> usize {
-        plan.execute().map(|b| b.num_rows()).sum()
+        plan.execute(&test_ctx()).map(|b| b.num_rows()).sum()
     }
 
     #[test]
@@ -177,7 +186,7 @@ mod tests {
             schema,
             vec![Arc::new(ColumnExpression::new(0))],
         );
-        let batches: Vec<_> = proj.execute().collect();
+        let batches: Vec<_> = proj.execute(&test_ctx()).collect();
         let rows: usize = batches.iter().map(|b| b.num_rows()).sum();
         assert_eq!(rows, 4);
         assert!(batches.iter().all(|b| b.num_columns() == 1));
@@ -219,7 +228,7 @@ mod tests {
         );
         let limited = LimitExec::new(Arc::new(projection), 1);
 
-        let batches: Vec<_> = limited.execute().collect();
+        let batches: Vec<_> = limited.execute(&test_ctx()).collect();
         let rows: usize = batches.iter().map(|b| b.num_rows()).sum();
         assert_eq!(rows, 1);
         assert!(batches.iter().all(|b| b.num_columns() == 1));

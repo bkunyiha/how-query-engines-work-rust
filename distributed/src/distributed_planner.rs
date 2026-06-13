@@ -118,8 +118,8 @@ impl DistributedPlanner {
     }
 }
 
-/// Replace every `ShuffleReaderExec` in the plan tree with one carrying the
-/// supplied locations. Generic walk: recurses on every child via
+/// Replace every `ShuffleReaderExec` in the plan tree with one carrying the supplied locations. 
+/// Generic walk: recurses on every child via
 /// `PhysicalPlan::with_new_children`. DataFusion-style — any plan shape that
 /// contains a `ShuffleReaderExec` gets its locations updated, not just the
 /// `HashAggregate(ShuffleReader)` shape `plan_aggregate` produces today.
@@ -134,6 +134,12 @@ fn substitute_shuffle_reader(
             locations.to_vec(),
         ));
     }
+    // In the aggregate case, stage 1’s plan is not just a ShuffleReaderExec. It is:
+    //   HashAggregateExec
+    //     input: ShuffleReaderExec
+    //
+    // Stage roots are often parents like HashAggregateExec; walk down to find
+    // the ShuffleReaderExec leaf that actually needs the locations.
     // Otherwise: recurse into children, then rebuild this node with the
     // (possibly transformed) children. If no descendant is a ShuffleReader,
     // every with_new_children call rebuilds with the same logical contents.

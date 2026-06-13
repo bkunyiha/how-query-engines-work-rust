@@ -61,7 +61,17 @@ pub fn serialize_physical_plan(plan: &dyn PhysicalPlan) -> pb::PhysicalPlanNode 
         return pb::PhysicalPlanNode {
             plan_type: Some(PlanType::Scan(pb::ScanExecNode {
                 path,
-                schema: Some((&plan.schema()).into()),
+                // **Important**: send the FULL (pre-projection) data-source schema,
+                // not the projected output schema. `plan.schema()` is the
+                // projected one (`ds.schema().select(&projection)`); the
+                // receiver needs the full schema to construct a
+                // `CsvDataSource` that knows how many columns the file has,
+                // and then applies `projection` in `scan(...)`. Sending the
+                // projected schema caused arrow's CSV reader to expect a
+                // 2-column file when the file actually has 6 columns —
+                // surfaced as "incorrect number of fields for line 1" in
+                // client/tests/distributed_integration_test.rs.
+                schema: Some((&scan.ds.schema()).into()),
                 projection: scan.projection.clone(),
                 file_format,
             })),

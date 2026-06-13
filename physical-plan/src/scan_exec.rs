@@ -5,6 +5,7 @@
 //! `DataSource` (which the optimizer's `ProjectionPushDownRule` has already
 //! trimmed to just the columns the query needs).
 
+use crate::executor_context::ExecutorContext;
 use crate::physical_plan::PhysicalPlan;
 use datasource::DataSource;
 use datatypes::{RecordBatch, Schema};
@@ -33,8 +34,10 @@ impl PhysicalPlan for ScanExec {
         self.ds.schema().select(&self.projection)
     }
 
-    fn execute(&self) -> Box<dyn Iterator<Item = RecordBatch>> {
-        // Kotlin: `ds.scan(projection)`.
+    fn execute(&self, _ctx: &ExecutorContext) -> Box<dyn Iterator<Item = RecordBatch>> {
+        // A leaf scan needs no executor context — the `DataSource` reads from
+        // its own configured location (CSV path / Parquet path). `_ctx` is
+        // present in the signature only so the trait contract is uniform.
         self.ds.scan(&self.projection)
     }
 

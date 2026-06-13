@@ -32,6 +32,7 @@ use datasource::{CsvDataSource, DataSource};
 use datatypes::RecordBatch;
 use logical_plan::{DataFrame, LogicalPlan, Scan};
 use optimizer::Optimizer;
+use physical_plan::ExecutorContext;
 use query_planner::QueryPlanner;
 // `PrattParser` brings the `parse` method into scope for `SqlParser`.
 use sql::{PrattParser, SqlExpr, SqlParser, SqlPlanner, SqlTokenizer};
@@ -105,10 +106,16 @@ impl ExecutionContext {
 
     /// Execute the provided logical plan. Kotlin `execute(plan)`: optimize, lower
     /// to a physical plan, and run it.
+    ///
+    /// Constructs a single-process `ExecutorContext` to satisfy the trait
+    /// signature. Non-shuffle operators ignore it; the executor identity is
+    /// `"single-node"` and the shuffle directory is a default path that's
+    /// never actually written to (no shuffle ops run in single-process mode).
     pub fn execute(&self, plan: &LogicalPlan) -> Box<dyn Iterator<Item = RecordBatch>> {
         let optimized = Optimizer::new().optimize(plan);
         let physical = QueryPlanner::new().create_physical_plan(&optimized);
-        physical.execute()
+        let ctx = ExecutorContext::new("single-node", "localhost", 0, "/tmp/rquery-single-node");
+        physical.execute(&ctx)
     }
 }
 

@@ -18,6 +18,7 @@
 //! - **Right join** re-scans the left side to find which right keys matched, then
 //!   emits the unmatched right rows with nulls on the left — exactly as Kotlin does.
 
+use crate::executor_context::ExecutorContext;
 use crate::physical_plan::PhysicalPlan;
 use crate::row_key::RowKey;
 use datatypes::{
@@ -165,10 +166,11 @@ impl PhysicalPlan for HashJoinExec {
         ))
     }
 
-    fn execute(&self) -> Box<dyn Iterator<Item = RecordBatch>> {
-        // --- Build phase: load all right-side rows into a hash table. ---
+    fn execute(&self, ctx: &ExecutorContext) -> Box<dyn Iterator<Item = RecordBatch>> {
+        // Join doesn't read ctx itself; threads it through to both children
+        // so shuffle-bearing inputs find their executor state.
         let mut hash_table: HashMap<RowKey, Vec<Vec<ScalarValue>>> = HashMap::new();
-        for batch in self.right.execute() {
+        for batch in self.right.execute(ctx) {
             let cols = Self::columns_of(&batch);
             for row in 0..batch.num_rows() {
                 let key = Self::key_of(&cols, &self.right_keys, row);
@@ -183,7 +185,7 @@ impl PhysicalPlan for HashJoinExec {
         let mut outputs: Vec<RecordBatch> = Vec::new();
 
         // --- Probe phase: find matches for each left row. ---
-        for left_batch in self.left.execute() {
+        for left_batch in self.left.execute(ctx) {
             let cols = Self::columns_of(&left_batch);
             let mut output_rows: Vec<Vec<ScalarValue>> = Vec::new();
             for row in 0..left_batch.num_rows() {
@@ -219,7 +221,7 @@ impl PhysicalPlan for HashJoinExec {
         // --- Right join: emit unmatched right rows with nulls on the left. ---
         if matches!(self.join_type, JoinType::Right) {
             let mut matched_keys: HashSet<RowKey> = HashSet::new();
-            for left_batch in self.left.execute() {
+            for left_batch in self.left.execute(ctx) {
                 let cols = Self::columns_of(&left_batch);
                 for row in 0..left_batch.num_rows() {
                     let probe_key = Self::key_of(&cols, &self.left_keys, row);
@@ -279,7 +281,7 @@ mod tests {
         fn schema(&self) -> Schema {
             self.schema.clone()
         }
-        fn execute(&self) -> Box<dyn Iterator<Item = RecordBatch>> {
+        fn execute(&self, _ctx: &ExecutorContext) -> Box<dyn Iterator<Item = RecordBatch>> {
             Box::new(self.batches.clone().into_iter())
         }
         fn children(&self) -> Vec<&Arc<dyn PhysicalPlan>> {
@@ -389,7 +391,7 @@ mod tests {
             out_schema(),
             HashSet::from([0]),
         );
-        let mut rows = collect_rows(join.execute().collect());
+        let mut rows = collect_rows(join.execute(&ExecutorContext::new("test", "localhost", 0, "/tmp/rquery-test-ignored")).collect());
         rows.sort();
         assert_eq!(
             rows,
@@ -411,7 +413,7 @@ mod tests {
             out_schema(),
             HashSet::from([0]),
         );
-        let mut rows = collect_rows(join.execute().collect());
+        let mut rows = collect_rows(join.execute(&ExecutorContext::new("test", "localhost", 0, "/tmp/rquery-test-ignored")).collect());
         rows.sort();
         assert_eq!(
             rows,

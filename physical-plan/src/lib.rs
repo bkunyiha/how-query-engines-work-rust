@@ -47,7 +47,7 @@
 //!   `ShuffleIdAction`, `Task`, `ShuffleLocation`) are ported as data types. The
 //!   shuffle operators (`ShuffleReaderExec`, `ShuffleWriterExec`) and `ShuffleManager`
 //!   I/O are stubbed with `unimplemented!()` — their `execute()` requires the
-//!   distributed executor context (modules 13/14), exactly as Kotlin's `execute()`
+//!   distributed executor context (modules 13/15), exactly as Kotlin's `execute()`
 //!   throws and defers to `executeWithContext`/`executeAndWriteShuffle`.
 //!
 //! The per-phase file inventory and what each phase does is tabulated in
@@ -73,6 +73,13 @@ pub mod cast_expression;
 pub mod column_expression;
 pub mod count_expression;
 pub mod date_expression;
+// `executor_context.rs` has no Kotlin counterpart in this directory — it
+// bundles the four constructor params of Kotlin's `KQueryFlightProducer`
+// (executorId/host/port + shuffleManager) into a single value, so the
+// shuffle operators (Batches B/C) take one parameter instead of four.
+// See `ARCHITECTURE.md` §1.5 for the Phase 2 plan to move this struct
+// to `flight-server` alongside `ShuffleManager`.
+pub mod executor_context;
 pub mod expressions;
 pub mod hash_aggregate_exec;
 pub mod hash_join_exec;
@@ -141,3 +148,6 @@ pub use shuffle_manager::ShuffleManager;
 pub use shuffle_reader_exec::ShuffleReaderExec;
 pub use shuffle_writer_exec::ShuffleWriterExec;
 pub use task::Task;
+// Module 13 scaffolding — consumed by flight-server (Batches D/E) and the
+// shuffle operator bodies (Batches B/C).
+pub use executor_context::ExecutorContext;

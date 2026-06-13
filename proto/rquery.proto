@@ -230,8 +230,16 @@ message KeyValuePair {
 }
 
 message Action {
-  // interactive query
+  // Interactive query — when set, the server runs the logical plan via
+  // ExecutionContext and streams the results back. This is the kquery
+  // shape (getStream takes a LogicalPlan).
   LogicalPlanNode query = 1;
+
+  // Distributed final-stage task — when set, the server runs the physical
+  // task's plan via `plan.execute(&ctx)` and streams the result batches
+  // back via FlightDataEncoder. rquery-only field (not in kquery — kquery
+  // has no working distributed final-stage path).
+  TaskInfo task = 2;
 
   // configuration settings
   repeated KeyValuePair settings = 100;

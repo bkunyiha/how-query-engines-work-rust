@@ -11,6 +11,7 @@
 //! `ScalarValue::Boolean(true)`. No downcast is needed, and it keeps the operator
 //! working against any `ColumnVector` implementation.
 
+use crate::executor_context::ExecutorContext;
 use crate::expressions::Expression;
 use crate::physical_plan::PhysicalPlan;
 use datatypes::{record_batch, ArrowVectorBuilder, ColumnVector, RecordBatch, ScalarValue, Schema};
@@ -34,11 +35,11 @@ impl PhysicalPlan for SelectionExec {
         self.input.schema()
     }
 
-    fn execute(&self) -> Box<dyn Iterator<Item = RecordBatch>> {
-        // Selection preserves the schema, so capture it once for all batches.
+    fn execute(&self, ctx: &ExecutorContext) -> Box<dyn Iterator<Item = RecordBatch>> {
+        // Selection just filters per batch — no context use; pass through.
         let schema = self.input.schema();
         let expr = Arc::clone(&self.expr);
-        Box::new(self.input.execute().map(move |batch| {
+        Box::new(self.input.execute(ctx).map(move |batch| {
             let selection = expr.evaluate(&batch);
             let columns: Vec<Box<dyn ColumnVector>> = (0..batch.num_columns())
                 .map(|i| filter(&record_batch::field(&batch, i), selection.as_ref()))

@@ -90,9 +90,27 @@ env_logger    = "0.11"
 # `tracing` is DataFusion's logging choice. Used by `distributed/` (the analogue of
 # Kotlin's `java.util.logging.Logger` in `Scheduler.kt`) so rquery readers see the
 # same macro names (`info!`/`debug!`/`warn!`) they will meet at DataFusion source level.
-# `tracing-subscriber` is the consumer side; left as a binary's choice, not pulled
-# in here as a workspace dep.
 tracing       = "0.1"
+# `tracing-subscriber` is the consumer side — only needed by binaries that initialise
+# the global subscriber. Added at workspace level so `flight-server`'s bin and any
+# future bins can pick it up consistently.
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Async runtime — required by `flight-server` (the Arrow Flight server runs on tonic,
+# which is async-native). Kept minimal in features: rt-multi-thread for the worker
+# pool, macros for `#[tokio::main]`, sync for `mpsc` channels used in the
+# sync->async bridge inside `do_get` (see ARCHITECTURE.md §4.6).
+#
+# NOTE: This does NOT contradict the rayon-not-tokio rule at line 52. Rayon is for
+# CPU-bound operator execution inside `ParallelContext`; tokio is for I/O-bound gRPC
+# handling at the Flight boundary. The two coexist: operator threads use rayon,
+# Flight server I/O uses tokio. See ARCHITECTURE.md §3.9 for the split rationale.
+tokio         = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"] }
+
+# `futures` provides the `Stream` trait that arrow-flight's `FlightService` associated
+# types require. `tokio-stream` (added when we need `ReceiverStream` in batch E) sits
+# on top of `futures-core`; pulling `futures` keeps both surfaces available.
+futures       = "0.3"
 
 # UUID generation — analogue of Kotlin's `java.util.UUID.randomUUID()`. Used by
 # `distributed::Scheduler` to mint a fresh `jobUuid` per query.

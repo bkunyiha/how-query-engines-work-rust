@@ -45,7 +45,7 @@ use datasource::{CsvDataSource, DataSource};
 use datatypes::{RecordBatch, Schema};
 use logical_plan::{DataFrame, LogicalPlan, Scan};
 use optimizer::Optimizer;
-use physical_plan::{AggregateMode, HashAggregateExec, PhysicalPlan};
+use physical_plan::{AggregateMode, ExecutorContext, HashAggregateExec, PhysicalPlan};
 use query_planner::QueryPlanner;
 // `PrattParser` brings the `parse` method into scope for `SqlParser`.
 use sql::{PrattParser, SqlExpr, SqlParser, SqlPlanner, SqlTokenizer};
@@ -140,18 +140,23 @@ impl ParallelContext {
     pub fn execute(&self, plan: &LogicalPlan) -> Box<dyn Iterator<Item = RecordBatch>> {
         let optimized = Optimizer::new().optimize(plan);
         let physical = QueryPlanner::new().create_physical_plan(&optimized);
-        self.execute_parallel(physical.as_ref())
+        let ctx = ExecutorContext::new("parallel", "localhost", 0, "/tmp/rquery-parallel-ignored");
+        self.execute_parallel(physical.as_ref(), &ctx)
     }
 
     /// Run a physical plan, special-casing `HashAggregateExec` for parallelism.
     /// Kotlin `executeParallel`.
-    fn execute_parallel(&self, plan: &dyn PhysicalPlan) -> Box<dyn Iterator<Item = RecordBatch>> {
+    fn execute_parallel(
+        &self,
+        plan: &dyn PhysicalPlan,
+        ctx: &ExecutorContext,
+    ) -> Box<dyn Iterator<Item = RecordBatch>> {
         // Standard Rust idiom for "is this trait object a specific concrete type?"
         // (Kotlin's `when (plan) { is HashAggregateExec -> … else -> plan.execute() }`).
         if let Some(aggregate) = plan.as_any().downcast_ref::<HashAggregateExec>() {
-            self.execute_parallel_aggregate(aggregate)
+            self.execute_parallel_aggregate(aggregate, ctx)
         } else {
-            plan.execute()
+            plan.execute(ctx)
         }
     }
 
@@ -159,14 +164,15 @@ impl ParallelContext {
     fn execute_parallel_aggregate(
         &self,
         aggregate: &HashAggregateExec,
+        ctx: &ExecutorContext,
     ) -> Box<dyn Iterator<Item = RecordBatch>> {
         // With a single worker there is nothing to fan out — run it directly.
         if self.parallelism <= 1 {
-            return aggregate.execute();
+            return aggregate.execute(ctx);
         }
 
         // Collect the input batches and distribute them round-robin to workers.
-        let input_batches: Vec<RecordBatch> = aggregate.input.execute().collect();
+        let input_batches: Vec<RecordBatch> = aggregate.input.execute(ctx).collect();
         let mut worker_batches: Vec<Vec<RecordBatch>> =
             (0..self.parallelism).map(|_| Vec::new()).collect();
         for (index, batch) in input_batches.into_iter().enumerate() {
@@ -175,10 +181,13 @@ impl ParallelContext {
 
         // Run a partial aggregate per non-empty bucket, in parallel (rayon is the
         // CPU-bound substitute for Kotlin's coroutines — see the module note).
+        // The closures clone the parent `ctx` so workers don't borrow across
+        // thread boundaries.
+        let partial_ctx = ctx.clone();
         let partial_results: Vec<RecordBatch> = worker_batches
             .into_par_iter()
             .filter(|bucket| !bucket.is_empty())
-            .map(|bucket| execute_partial_aggregate(aggregate, bucket))
+            .map(|bucket| execute_partial_aggregate(aggregate, bucket, &partial_ctx))
             .collect::<Vec<Vec<RecordBatch>>>()
             .into_iter()
             .flatten()
@@ -189,7 +198,7 @@ impl ParallelContext {
         }
 
         // Merge the partial results with a final aggregate.
-        execute_final_aggregate(aggregate, partial_results)
+        execute_final_aggregate(aggregate, partial_results, ctx)
     }
 }
 
@@ -199,6 +208,7 @@ impl ParallelContext {
 fn execute_partial_aggregate(
     aggregate: &HashAggregateExec,
     batches: Vec<RecordBatch>,
+    ctx: &ExecutorContext,
 ) -> Vec<RecordBatch> {
     let partial = HashAggregateExec::new_with_mode(
         Arc::new(InMemoryPlan::new(aggregate.input.schema(), batches)),
@@ -207,7 +217,7 @@ fn execute_partial_aggregate(
         aggregate.schema.clone(),
         AggregateMode::Partial,
     );
-    partial.execute().collect()
+    partial.execute(ctx).collect()
 }
 
 /// Merge the partial results with a `Final` aggregate. Kotlin
@@ -216,6 +226,7 @@ fn execute_partial_aggregate(
 fn execute_final_aggregate(
     aggregate: &HashAggregateExec,
     partial_batches: Vec<RecordBatch>,
+    ctx: &ExecutorContext,
 ) -> Box<dyn Iterator<Item = RecordBatch>> {
     let final_aggregate = HashAggregateExec::new_with_mode(
         Arc::new(InMemoryPlan::new(aggregate.schema.clone(), partial_batches)),
@@ -224,7 +235,7 @@ fn execute_final_aggregate(
         aggregate.schema.clone(),
         AggregateMode::Final,
     );
-    final_aggregate.execute()
+    final_aggregate.execute(ctx)
 }
 
 /// Leaf physical plan that replays pre-loaded batches. Kotlin's private
@@ -255,7 +266,7 @@ impl PhysicalPlan for InMemoryPlan {
         Vec::new()
     }
 
-    fn execute(&self) -> Box<dyn Iterator<Item = RecordBatch>> {
+    fn execute(&self, _ctx: &ExecutorContext) -> Box<dyn Iterator<Item = RecordBatch>> {
         // arrow `RecordBatch` is `Arc`-backed, so cloning the vec is cheap.
         Box::new(self.batches.clone().into_iter())
     }

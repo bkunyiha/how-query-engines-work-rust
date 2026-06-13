@@ -44,11 +44,24 @@ pub fn serialize_logical_plan(plan: &LogicalPlan) -> pb::LogicalPlanNode {
                 columns: scan.projection.clone(),
             });
             let any = scan.data_source.as_any();
-            if any.is::<CsvDataSource>() {
+            if let Some(csv) = any.downcast_ref::<CsvDataSource>() {
+                // `has_header` must be propagated to the proto so the
+                // deserialiser reconstructs a `CsvDataSource` with the same
+                // header-handling configuration. Default-constructing this
+                // field (the earlier shape) hard-coded `has_header = false`,
+                // which caused the header line of any CSV to be read as a
+                // data row on the receiving side — surfacing as an off-by-one
+                // row count in the flight-server integration test.
+                // The proto field is named `has_header` (singular); the Rust
+                // field is `has_headers` (plural). The mapping is correct
+                // because the deserialiser (protobuf_deserializer.rs:50)
+                // reads `csv.has_header` and passes it as the `has_headers`
+                // ctor arg.
                 pb::LogicalPlanNode {
                     csv_scan: Some(pb::CsvTableScanNode {
                         path: scan.path.clone(),
                         projection,
+                        has_header: csv.has_headers,
                         ..Default::default()
                     }),
                     ..Default::default()

@@ -1,6 +1,6 @@
 [package]
 name         = "client"
-description  = "Flight client wrapper. Rust port of kquery/client."
+description  = "Flight client wrapper + FlightExecutorClient for the distributed scheduler. Rust port of kquery/client."
 edition.workspace      = true
 license.workspace      = true
 version.workspace      = true
@@ -8,17 +8,53 @@ authors.workspace      = true
 rust-version.workspace = true
 
 [dependencies]
-# External — the Arrow Flight client; communication with the Flight server
-# is over the wire (not via the in-workspace `flight-server` crate).
-arrow                = { workspace = true }
-arrow-flight         = { workspace = true }
-tonic                = { workspace = true }
+# External — the Arrow Flight client + the async stack underneath it.
+# Communication with the Flight server is over the wire (not via the
+# in-workspace `flight-server` crate).
+arrow            = { workspace = true }
+arrow-flight     = { workspace = true }
+tonic            = { workspace = true }
+tokio            = { workspace = true }
+# `futures` for the `Stream` trait (decoding `FlightData` from the server's
+# `do_get` response). `tokio-stream` for stream adapters used when consuming
+# the `Streaming<FlightData>` returned by tonic.
+futures          = { workspace = true }
+tokio-stream     = "0.1"
+# `prost` for direct `Message::encode_to_vec` / `decode` on `pb::Action`,
+# `pb::TaskInfo`, `pb::TaskResult` — same direct usage as `flight-server`.
+prost            = { workspace = true }
+# `tracing` for log macros (matches `flight-server` and `distributed`).
+tracing          = { workspace = true }
 
-# Internal — four siblings, matching the upstream Kotlin client/build.gradle.kts
-# dependency graph. Notably no `flight-server` dependency: the protocol contract
-# lives in the serialised protobuf bytes, not in shared Rust types. Verified
-# against the kquery source per ../ARCHITECTURE.md §1.4 (empirical findings table).
-datatypes    = { path = "../datatypes" }
-datasource   = { path = "../datasource" }
-logical-plan = { path = "../logical-plan" }
-protobuf     = { path = "../protobuf" }
+# Internal — six siblings.
+# - datatypes / datasource / logical-plan / protobuf: per the upstream
+#   Kotlin `client/build.gradle.kts` (no `flight-server` dep — the
+#   wire-level protobuf contract is the entire interface).
+# - distributed: Rust-port addition not present in kquery. We need it to
+#   `impl distributed::ExecutorClient for FlightExecutorClient`, the
+#   concrete client that drives the scheduler over real gRPC. kquery
+#   doesn't have an equivalent (its `Client.kt` is interactive only);
+#   the rquery port is closing the §7 mock rows by adding this here.
+#   Documented in `TRANSLATION_NOTES.md` → Module: client.
+# - sql: needed by `Context::sql` to parse the user's SQL string into
+#   a `LogicalPlan`. kquery's `Context.kt` uses the same module.
+datatypes     = { path = "../datatypes" }
+datasource    = { path = "../datasource" }
+logical-plan  = { path = "../logical-plan" }
+protobuf      = { path = "../protobuf" }
+# `physical-plan` is needed for `Task` and `ShuffleLocation` — the types
+# `FlightExecutorClient` ships across the wire. kquery's client doesn't
+# import physical-plan because kquery has no `FlightExecutorClient`; this
+# dep is a rquery-only addition (see flight_executor_client.rs).
+physical-plan = { path = "../physical-plan" }
+distributed   = { path = "../distributed" }
+sql           = { path = "../sql" }
+
+anyhow       = { workspace = true }
+
+[dev-dependencies]
+# The integration test in `tests/` spins up a real `flight-server` on a
+# random port and drives a distributed query through it. The dep is
+# dev-only — at runtime the client crate has no knowledge of
+# `flight-server`; the protocol contract is the protobuf bytes.
+flight-server = { path = "../flight-server" }

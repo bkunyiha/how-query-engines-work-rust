@@ -8,10 +8,22 @@ authors.workspace      = true
 rust-version.workspace = true
 
 [dependencies]
-# External — Arrow Flight runs on tonic (async gRPC).
+# External — Arrow Flight runs on tonic (async gRPC) over a tokio runtime.
 arrow            = { workspace = true }
 arrow-flight     = { workspace = true }
 tonic            = { workspace = true }
+tokio            = { workspace = true }
+# `futures` for the `Stream` trait that arrow-flight's `FlightService` associated
+# types require, plus `futures::stream::iter` used to wrap the single-result
+# response in `do_action`. `tokio-stream` for `ReceiverStream` (used by the
+# sync->async bridge in `do_get`).
+futures          = { workspace = true }
+tokio-stream     = "0.1"
+# `prost` for direct `Message::decode` / `encode_to_vec` calls on `pb::TaskInfo`
+# and `pb::TaskResult` inside `do_action`. arrow-flight already depends on
+# prost transitively; declaring it here is the public-API surface our code
+# uses directly.
+prost            = { workspace = true }
 
 # Internal — eight siblings, matching the upstream Kotlin flight-server/build.gradle.kts
 # dependency graph. Verified against the kquery source per
@@ -25,10 +37,13 @@ sql            = { path = "../sql" }
 protobuf       = { path = "../protobuf" }
 execution      = { path = "../execution" }
 
-log              = { workspace = true }
-env_logger       = { workspace = true }
-anyhow           = { workspace = true }
+# `tracing` for log macros (matches distributed/'s logging choice — both crates
+# emit `info!`/`debug!`/`warn!` so a reader graduating to DataFusion source sees
+# the same surface). `tracing-subscriber` only consumed by the bin.
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow             = { workspace = true }
 
 [[bin]]
-name         = "flight-server"
+name = "flight-server"
 path = "src/bin/flight_server.rs"

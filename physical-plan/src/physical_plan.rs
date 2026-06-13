@@ -70,6 +70,7 @@
 //! bound — their trait objects are created and consumed inside a single worker and
 //! never cross a thread boundary.
 
+use crate::executor_context::ExecutorContext;
 use datatypes::{RecordBatch, Schema};
 use std::fmt;
 use std::sync::Arc;
@@ -85,7 +86,28 @@ pub trait PhysicalPlan: fmt::Display + Send + Sync {
     fn schema(&self) -> Schema;
 
     /// Execute the plan and produce a (lazy) series of record batches.
-    fn execute(&self) -> Box<dyn Iterator<Item = RecordBatch>>;
+    ///
+    /// `ctx` carries per-process runtime state: the executor identity (so
+    /// `ShuffleReaderExec` knows which locations are local) and the
+    /// [`crate::ShuffleManager`] (so shuffle reads/writes know which disk
+    /// directory to use). Most operators ignore `ctx` and just thread it
+    /// through to `self.input.execute(ctx)`. Only the shuffle operators
+    /// actually read it.
+    ///
+    /// ## Translation note — idiomatic Rust forced substitution
+    /// kquery's trait method is `execute(): Sequence<RecordBatch>` with no
+    /// parameters; shuffle operators throw `UnsupportedOperationException`
+    /// and expose sibling methods like `executeWithContext(...)` that take
+    /// the context separately. That works in Kotlin where runtime
+    /// exceptions are an acceptable API contract, but it leaves the Rust
+    /// type system unable to enforce the precondition — a caller could
+    /// reach `execute()` and panic at runtime. The Rust port replaces
+    /// kquery's "throw + sibling method" pattern with a parameter on the
+    /// trait method itself: the compiler now refuses to compile a call
+    /// site that doesn't supply a context. The `execute_with_context` /
+    /// `execute_and_write_shuffle` siblings are gone. Documented as a
+    /// forced substitution in `TRANSLATION_NOTES.md` → Module: physical-plan.
+    fn execute(&self, ctx: &ExecutorContext) -> Box<dyn Iterator<Item = RecordBatch>>;
 
     /// The children (inputs) of this plan, used to walk the operator tree.
     ///

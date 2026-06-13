@@ -15,6 +15,7 @@ use datasource::CsvDataSource;
 use datatypes::RecordBatch;
 use logical_plan::{DataFrame, LogicalPlan, Scan};
 use optimizer::Optimizer;
+use physical_plan::PhysicalPlan;
 use query_planner::QueryPlanner;
 // `PrattParser` trait must be in scope for `SqlParser::parse()`.
 use sql::{PrattParser, SqlExpr, SqlParser, SqlPlanner, SqlTokenizer};
@@ -73,8 +74,8 @@ impl<C: ExecutorClient> DistributedContext<C> {
     /// Optimize, lower to a physical plan, then dispatch via the scheduler.
     /// Kotlin `fun execute(plan: LogicalPlan): Sequence<RecordBatch>`.
     pub fn execute(&self, plan: &LogicalPlan) -> Box<dyn Iterator<Item = RecordBatch>> {
-        let optimized = Optimizer::new().optimize(plan);
-        let physical = QueryPlanner::new().create_physical_plan(&optimized);
+        let optimized: LogicalPlan = Optimizer::new().optimize(plan);
+        let physical: Arc<dyn PhysicalPlan> = QueryPlanner::new().create_physical_plan(&optimized);
         self.scheduler.execute(physical)
     }
 }

@@ -30,10 +30,13 @@
 //!   protobuf types. Wire serialisation only happens at the Flight boundary.
 //!
 //! ## Status
-//! Module 14 of 15. Last orchestration module before the Flight-server wiring
-//! and client wrap. Built against the un-stubbed `ShuffleManager` in
-//! `physical-plan`; the `ShuffleReaderExec` / `ShuffleWriterExec` `execute()`
-//! bodies remain stubbed until module 13 lands the `ExecutorContext` type.
+//! Module 15 of 15 — the last module in the workspace build order. Ported out
+//! of build order: distributed (15) was completed first because the
+//! `ExecutorClient` trait and `Scheduler` types it defines are needed to drive
+//! the integration tests for flight-server (13) and client (14). Built against
+//! the un-stubbed `ShuffleManager` in `physical-plan`; the `ShuffleReaderExec`
+//! / `ShuffleWriterExec` `execute()` bodies were stubbed at module-14 boundary
+//! and un-stubbed in module 13 when `ExecutorContext` landed.
 
 pub mod distributed_config;
 pub mod distributed_context;

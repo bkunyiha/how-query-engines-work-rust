@@ -3,6 +3,7 @@
 //! Evaluates a list of expressions against each input batch and assembles the
 //! results into an output batch with the projection's schema.
 
+use crate::executor_context::ExecutorContext;
 use crate::expressions::Expression;
 use crate::physical_plan::PhysicalPlan;
 use datatypes::{record_batch, ColumnVector, RecordBatch, Schema};
@@ -36,13 +37,12 @@ impl PhysicalPlan for ProjectionExec {
         self.schema.clone()
     }
 
-    fn execute(&self) -> Box<dyn Iterator<Item = RecordBatch>> {
-        // Kotlin: `input.execute().map { batch -> RecordBatch(schema, expr.map { it.evaluate(batch) }) }`.
-        // We clone the schema and the (Arc-wrapped) expressions into the closure so
-        // the returned iterator owns everything it needs (it must be `'static`).
+    fn execute(&self, ctx: &ExecutorContext) -> Box<dyn Iterator<Item = RecordBatch>> {
+        // Projection just evaluates expressions per batch — no context use; pass
+        // through to the input so shuffle-bearing children downstream can find it.
         let schema = self.schema.clone();
         let exprs = self.expr.clone();
-        Box::new(self.input.execute().map(move |batch| {
+        Box::new(self.input.execute(ctx).map(move |batch| {
             let columns: Vec<Box<dyn ColumnVector>> =
                 exprs.iter().map(|e| e.evaluate(&batch)).collect();
             record_batch::create(&schema, columns)
