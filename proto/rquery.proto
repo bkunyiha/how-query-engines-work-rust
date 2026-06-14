@@ -1,22 +1,14 @@
 // Wire-format definitions for rquery's distributed-execution surface
-// (`flight-server`, `client`, `distributed`). Faithful port of
-// `kquery/protobuf/src/main/proto/kquery.proto`.
+// (`flight-server`, `client`, `distributed`).
 //
-// Differences from the kquery original:
-//   1. Package renamed `kquery.protobuf` → `rquery.protobuf` (consistent
-//      with the kquery→rquery rename of user-visible identifiers; see
-//      TRANSLATION_NOTES.md).
-//   2. The Kotlin/JVM-only `option java_*` lines are removed — they have
-//      no effect on Rust code generation (prost ignores them) and the
-//      `KQueryProto` outer-class name was the only one that named kquery
-//      anyway.
-//   3. Added `int32 literal_date = 31;` to `LogicalExprNode.ExprType` so a
-//      logical `LiteralDate(NaiveDate)` can be serialised over the wire.
-//      kquery does not have this field (its `ProtobufSerializer` would
-//      throw on a date literal); the Rust port closes that gap now that
-//      `LiteralDate` is first-class via `chrono::NaiveDate`.
-//      Value is encoded as `days_since_unix_epoch`, matching the physical
-//      `literal_date` representation already used by `PhysicalExprNode`.
+// Package: `rquery.protobuf`. Generation is driven from the `protobuf`
+// crate's `build.rs` via `prost-build`.
+//
+// Note on date literals. `LogicalExprNode.ExprType.literal_date` (field 31)
+// carries a date literal as days since the Unix epoch (1970-01-01),
+// matching the physical `literal_date` representation already used by
+// `PhysicalExprNode`. This lets a logical `LiteralDate(NaiveDate)` be
+// serialised over the wire.
 
 syntax = "proto3";
 
@@ -50,8 +42,7 @@ message LogicalExprNode {
     float literal_f32 = 29;
     double literal_f64 = 30;
 
-    // Date literal as days since the Unix epoch (1970-01-01). Added by the
-    // Rust port; absent from kquery.
+    // Date literal as days since the Unix epoch (1970-01-01).
     int32 literal_date = 31;
 
     // binary expressions
@@ -231,14 +222,12 @@ message KeyValuePair {
 
 message Action {
   // Interactive query — when set, the server runs the logical plan via
-  // ExecutionContext and streams the results back. This is the kquery
-  // shape (getStream takes a LogicalPlan).
+  // ExecutionContext and streams the results back.
   LogicalPlanNode query = 1;
 
   // Distributed final-stage task — when set, the server runs the physical
   // task's plan via `plan.execute(&ctx)` and streams the result batches
-  // back via FlightDataEncoder. rquery-only field (not in kquery — kquery
-  // has no working distributed final-stage path).
+  // back via FlightDataEncoder.
   TaskInfo task = 2;
 
   // configuration settings

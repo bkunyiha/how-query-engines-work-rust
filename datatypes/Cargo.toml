@@ -1,6 +1,6 @@
 [package]
 name         = "datatypes"
-description  = "Core data types: Schema, Field, RecordBatch, ColumnVector. Rust port of kquery/datatypes."
+description  = "Core data types: Schema, Field, RecordBatch, ColumnVector."
 edition.workspace      = true
 license.workspace      = true
 version.workspace      = true

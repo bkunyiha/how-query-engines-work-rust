@@ -1,4 +1,3 @@
-//! Port of `kquery/client/src/main/kotlin/Client.kt`.
 //!
 //! Synchronous Flight client. Wraps an `arrow_flight::FlightServiceClient`
 //! over a tonic `Channel`, plus a dedicated tokio runtime that drives the
@@ -14,7 +13,7 @@
 //! `execute_final_task(...)` methods. So `Client` owns a tokio runtime and
 //! every method internally `block_on`s its async work. This is the inverse
 //! of `flight-server`'s `spawn_blocking` pattern (async caller → sync
-//! callee). Documented in `ARCHITECTURE.md` §4.14.
+//! callee).
 //!
 //! ## Runtime ownership — one per Client (Phase 1 simplification)
 //!
@@ -26,7 +25,7 @@
 //! overhead in exchange for trivially clear ownership.
 
 use crate::endpoint::Endpoint;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use arrow_flight::decode::FlightRecordBatchStream;
 use arrow_flight::error::FlightError;
 use arrow_flight::flight_service_client::FlightServiceClient;
@@ -34,11 +33,10 @@ use arrow_flight::{Action, Ticket};
 use datatypes::RecordBatch;
 use futures::StreamExt;
 use tokio::runtime::Runtime;
-use tonic::transport::Channel;
 use tonic::Request;
+use tonic::transport::Channel;
 
 /// A synchronous Flight client connected to one Flight server.
-/// Kotlin `class Client(host: String, port: Int)`.
 ///
 /// Construct with [`Client::new`]; subsequent `do_action` / `do_get` methods
 /// drive the gRPC calls through the owned tokio runtime.
@@ -79,7 +77,10 @@ impl Client {
             .build()?;
         let url = endpoint.url();
         let channel = runtime.block_on(async move {
-            Channel::from_shared(url)?.connect().await.map_err(anyhow::Error::from)
+            Channel::from_shared(url)?
+                .connect()
+                .await
+                .map_err(anyhow::Error::from)
         })?;
         Ok(Self {
             runtime,

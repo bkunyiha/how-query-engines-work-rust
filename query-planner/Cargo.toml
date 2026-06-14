@@ -1,6 +1,6 @@
 [package]
 name         = "query-planner"
-description  = "Logical → physical plan translation. Rust port of kquery/query-planner."
+description  = "Logical → physical plan translation."
 edition.workspace      = true
 license.workspace      = true
 version.workspace      = true
@@ -8,7 +8,7 @@ authors.workspace      = true
 rust-version.workspace = true
 
 [dependencies]
-chrono        = { workspace = true }   # NaiveDate → days_since_epoch for LiteralDate lowering (Kotlin `LocalDate.toEpochDay()`)
+chrono        = { workspace = true }   # NaiveDate → days_since_epoch for LiteralDate lowering
 datatypes     = { path = "../datatypes" }
 logical-plan  = { path = "../logical-plan" }
 physical-plan = { path = "../physical-plan" }

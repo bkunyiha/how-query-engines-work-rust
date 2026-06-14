@@ -1,38 +1,32 @@
-//! Port of `kquery/execution/src/main/kotlin/ParallelContext.kt`.
-//!
 //! An execution context that runs aggregate queries in parallel. For a
 //! `HashAggregateExec` it: (1) collects the input batches and distributes them
 //! round-robin across workers, (2) runs a *partial* aggregate on each worker's
 //! slice in parallel, then (3) merges the partial results with a *final*
-//! aggregate. Non-aggregate plans fall through to ordinary sequential execution.
+//! aggregate. Non-aggregate plans fall through to ordinary sequential
+//! execution.
 //!
-//! ## Translation notes
-//! - **Kotlin coroutines → rayon (ARCHITECTURE.md §3.9 / §4.8).** Kotlin spawns one
-//!   `async { … }` per worker queue inside `runBlocking(Dispatchers.Default)` and
-//!   awaits them. The work (`HashAggregateExec.execute()`) is **CPU-bound** — it
-//!   walks `ColumnVector`s and folds accumulators — so the faithful Rust analogue
-//!   is `rayon` (a work-stealing pool for CPU-bound closures), **not** `tokio`
-//!   (which targets I/O-bound concurrency and would starve its reactor here). The
-//!   round-robin `worker_batches` buckets are mapped in parallel with
-//!   `into_par_iter()`.
-//! - **`Send + Sync` prerequisite.** rayon moves each bucket onto a worker and
-//!   shares `&HashAggregateExec` across threads, so `PhysicalPlan` / `Expression` /
-//!   `AggregateExpression` / `DataSource` carry `Send + Sync` bounds (added for this
-//!   module; see the `physical_plan` module note). The cloned `group_expr` /
-//!   `aggregate_expr` (`Arc` clones) and the schema all satisfy them.
-//! - **Concrete-type recovery.** Kotlin's `executeParallel` does
-//!   `when (plan) { is HashAggregateExec -> … else -> plan.execute() }`. Rust can't
-//!   match a `&dyn PhysicalPlan` by concrete type, so `PhysicalPlan` exposes
+//! ## Notes
+//! - **Parallelism uses rayon.** The work
+//!   (`HashAggregateExec::execute`) is CPU-bound — it walks `ColumnVector`s
+//!   and folds accumulators — so the right tool is `rayon` (a work-stealing
+//!   pool for CPU-bound closures), not `tokio` (which targets I/O-bound
+//!   concurrency and would starve its reactor here). The round-robin
+//!   `worker_batches` buckets are mapped in parallel with `into_par_iter()`.
+//! - **`Send + Sync` prerequisite.** rayon moves each bucket onto a worker
+//!   and shares `&HashAggregateExec` across threads, so `PhysicalPlan`,
+//!   `Expression`, `AggregateExpression`, and `DataSource` carry `Send + Sync`
+//!   bounds. The cloned `group_expr` / `aggregate_expr` (`Arc` clones) and the
+//!   schema all satisfy them.
+//! - **Concrete-type recovery.** `PhysicalPlan` exposes
 //!   `fn as_any(&self) -> &dyn Any` and we downcast with
-//!   `plan.as_any().downcast_ref::<HashAggregateExec>()` (the standard Rust idiom,
-//!   matching DataFusion's `ExecutionPlan::as_any`).
-//! - **`InMemoryPlan`** mirrors Kotlin's private same-named class: a leaf physical
-//!   plan that simply replays a pre-loaded `Vec<RecordBatch>`, used to feed the
-//!   partial and final aggregates.
-//! - **`ConcurrentLinkedQueue` → `Vec<Vec<RecordBatch>>`.** The Kotlin code uses a
-//!   thread-safe queue per worker only because it builds the buckets and reads them
-//!   from coroutines; here the buckets are filled on one thread before the parallel
-//!   phase, so plain `Vec`s suffice.
+//!   `plan.as_any().downcast_ref::<HashAggregateExec>()` (the standard Rust
+//!   idiom, matching DataFusion's `ExecutionPlan::as_any`).
+//! - **`InMemoryPlan`** is a leaf physical plan that simply replays a
+//!   pre-loaded `Vec<RecordBatch>`, used to feed the partial and final
+//!   aggregates.
+//! - The per-worker bucket type is plain `Vec<Vec<RecordBatch>>` — buckets
+//!   are filled on one thread before the parallel phase, so no concurrent
+//!   queue is needed.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -50,19 +44,21 @@ use query_planner::QueryPlanner;
 // `PrattParser` brings the `parse` method into scope for `SqlParser`.
 use sql::{PrattParser, SqlExpr, SqlParser, SqlPlanner, SqlTokenizer};
 
-/// Default CSV batch size when `rquery.csv.batchSize` is unset. Kotlin: `"1024"`.
+/// Default CSV batch size when `rquery.csv.batchSize` is unset.
 const DEFAULT_BATCH_SIZE: usize = 1024;
 
-/// Number of workers when none is given. Kotlin: `Runtime.availableProcessors()`.
+/// Number of workers when none is given.
 fn default_parallelism() -> usize {
-    std::thread::available_parallelism().map(NonZeroUsize::get).unwrap_or(1)
+    std::thread::available_parallelism()
+        .map(NonZeroUsize::get)
+        .unwrap_or(1)
 }
 
-/// Execution context with parallel aggregation. Kotlin `class ParallelContext`.
+/// Execution context with parallel aggregation.
 pub struct ParallelContext {
-    /// Number of parallel workers. Kotlin `val parallelism`.
+    /// Number of parallel workers.
     pub parallelism: usize,
-    /// Configuration settings. Kotlin `val settings`.
+    /// Configuration settings.
     pub settings: HashMap<String, String>,
     batch_size: usize,
     tables: HashMap<String, DataFrame>,
@@ -75,28 +71,31 @@ impl Default for ParallelContext {
 }
 
 impl ParallelContext {
-    /// Parallelism defaults to the available CPU count; empty settings. Kotlin's
-    /// `ParallelContext()` with both parameters defaulted.
+    /// Parallelism defaults to the available CPU count; empty settings.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Construct with an explicit worker count. Kotlin
-    /// `ParallelContext(parallelism = …, settings = …)`.
+    /// Construct with an explicit worker count.
     pub fn with_parallelism(parallelism: usize, settings: HashMap<String, String>) -> Self {
         let batch_size = settings
             .get("rquery.csv.batchSize")
             .and_then(|s| s.parse::<usize>().ok())
             .unwrap_or(DEFAULT_BATCH_SIZE);
-        Self { parallelism, settings, batch_size, tables: HashMap::new() }
+        Self {
+            parallelism,
+            settings,
+            batch_size,
+            tables: HashMap::new(),
+        }
     }
 
-    /// The configured CSV batch size. Kotlin `val batchSize`.
+    /// The configured CSV batch size.
     pub fn batch_size(&self) -> usize {
         self.batch_size
     }
 
-    /// Create a `DataFrame` for the given SQL `SELECT`. Kotlin `sql(sql)`.
+    /// Create a `DataFrame` for the given SQL `SELECT`.
     pub fn sql(&self, sql: &str) -> DataFrame {
         let tokens = SqlTokenizer::new(sql).tokenize();
         let parsed = SqlParser::new(tokens).parse(0);
@@ -107,36 +106,39 @@ impl ParallelContext {
         SqlPlanner::new().create_data_frame(&select, &self.tables)
     }
 
-    /// Get a `DataFrame` representing the specified CSV file. Kotlin `csv(filename)`.
+    /// Get a `DataFrame` representing the specified CSV file.
     pub fn csv(&self, filename: &str) -> DataFrame {
         let source = CsvDataSource::new(filename, None, true, self.batch_size);
-        DataFrame::new(LogicalPlan::Scan(Scan::new(filename, Arc::new(source), vec![])))
+        DataFrame::new(LogicalPlan::Scan(Scan::new(
+            filename,
+            Arc::new(source),
+            vec![],
+        )))
     }
 
-    /// Register a `DataFrame` with the context. Kotlin `register`.
+    /// Register a `DataFrame` with the context.
     pub fn register(&mut self, table_name: &str, df: DataFrame) {
         self.tables.insert(table_name.to_string(), df);
     }
 
-    /// Register a data source with the context. Kotlin `registerDataSource`.
+    /// Register a data source with the context.
     pub fn register_data_source(&mut self, table_name: &str, data_source: Arc<dyn DataSource>) {
         let scan = Scan::new(table_name, data_source, vec![]);
         self.register(table_name, DataFrame::new(LogicalPlan::Scan(scan)));
     }
 
-    /// Register a CSV data source with the context. Kotlin `registerCsv`.
+    /// Register a CSV data source with the context.
     pub fn register_csv(&mut self, table_name: &str, filename: &str) {
         let df = self.csv(filename);
         self.register(table_name, df);
     }
 
-    /// Execute the logical plan represented by a `DataFrame`. Kotlin `execute(df)`.
+    /// Execute the logical plan represented by a `DataFrame`.
     pub fn execute_data_frame(&self, df: &DataFrame) -> Box<dyn Iterator<Item = RecordBatch>> {
         self.execute(df.logical_plan())
     }
 
-    /// Execute the provided logical plan with parallel processing. Kotlin
-    /// `execute(plan)`.
+    /// Execute the provided logical plan with parallel processing.
     pub fn execute(&self, plan: &LogicalPlan) -> Box<dyn Iterator<Item = RecordBatch>> {
         let optimized = Optimizer::new().optimize(plan);
         let physical = QueryPlanner::new().create_physical_plan(&optimized);
@@ -145,14 +147,12 @@ impl ParallelContext {
     }
 
     /// Run a physical plan, special-casing `HashAggregateExec` for parallelism.
-    /// Kotlin `executeParallel`.
     fn execute_parallel(
         &self,
         plan: &dyn PhysicalPlan,
         ctx: &ExecutorContext,
     ) -> Box<dyn Iterator<Item = RecordBatch>> {
         // Standard Rust idiom for "is this trait object a specific concrete type?"
-        // (Kotlin's `when (plan) { is HashAggregateExec -> … else -> plan.execute() }`).
         if let Some(aggregate) = plan.as_any().downcast_ref::<HashAggregateExec>() {
             self.execute_parallel_aggregate(aggregate, ctx)
         } else {
@@ -160,7 +160,7 @@ impl ParallelContext {
         }
     }
 
-    /// Parallel partial/final aggregation. Kotlin `executeParallelAggregate`.
+    /// Parallel partial/final aggregation.
     fn execute_parallel_aggregate(
         &self,
         aggregate: &HashAggregateExec,
@@ -179,9 +179,8 @@ impl ParallelContext {
             worker_batches[index % self.parallelism].push(batch);
         }
 
-        // Run a partial aggregate per non-empty bucket, in parallel (rayon is the
-        // CPU-bound substitute for Kotlin's coroutines — see the module note).
-        // The closures clone the parent `ctx` so workers don't borrow across
+        // Run a partial aggregate per non-empty bucket, in parallel. The
+        // closures clone the parent `ctx` so workers don't borrow across
         // thread boundaries.
         let partial_ctx = ctx.clone();
         let partial_results: Vec<RecordBatch> = worker_batches
@@ -202,9 +201,9 @@ impl ParallelContext {
     }
 }
 
-/// Run a `Partial` aggregate over one worker's batches. Kotlin
-/// `executePartialAggregate`. A free function (not a method) so the rayon closure
-/// captures only `&HashAggregateExec`, never `&self`.
+/// Run a `Partial` aggregate over one worker's batches. A free function (not
+/// a method) so the rayon closure captures only `&HashAggregateExec`, never
+/// `&self`.
 fn execute_partial_aggregate(
     aggregate: &HashAggregateExec,
     batches: Vec<RecordBatch>,
@@ -220,9 +219,9 @@ fn execute_partial_aggregate(
     partial.execute(ctx).collect()
 }
 
-/// Merge the partial results with a `Final` aggregate. Kotlin
-/// `executeFinalAggregate`. Note the input schema is the *aggregate's* output
-/// schema (the partial results), not the original input schema.
+/// Merge the partial results with a `Final` aggregate. Note the input schema
+/// is the *aggregate's* output schema (the partial results), not the original
+/// input schema.
 fn execute_final_aggregate(
     aggregate: &HashAggregateExec,
     partial_batches: Vec<RecordBatch>,
@@ -238,8 +237,8 @@ fn execute_final_aggregate(
     final_aggregate.execute(ctx)
 }
 
-/// Leaf physical plan that replays pre-loaded batches. Kotlin's private
-/// `InMemoryPlan`. Used to feed batches into the partial/final aggregates.
+/// Leaf physical plan that replays pre-loaded batches. Used to feed batches
+/// into the partial/final aggregates.
 struct InMemoryPlan {
     schema: Schema,
     batches: Vec<RecordBatch>,
@@ -289,8 +288,8 @@ impl PhysicalPlan for InMemoryPlan {
 
 #[cfg(test)]
 mod tests {
-    //! Port of `ParallelContextTest.kt`. Compares the parallel context against the
-    //! sequential `ExecutionContext` on a GROUP BY / SUM query, and checks that a
+    //! Compares the parallel context against the sequential
+    //! `ExecutionContext` on a GROUP BY / SUM query, and checks that a
     //! single-worker parallel context still produces results.
     use super::*;
     use crate::execution_context::ExecutionContext;

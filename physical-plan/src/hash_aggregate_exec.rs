@@ -1,4 +1,3 @@
-//! Port of `kquery/physical-plan/src/main/kotlin/HashAggregateExec.kt`.
 //!
 //! Group-by hash aggregation — the trickiest operator in the module (ARCHITECTURE
 //! §4.6). It maintains a hash map keyed by the group-by values; each input row is
@@ -8,15 +7,13 @@
 //! before it can emit anything — so `execute` consumes the whole input eagerly and
 //! returns a single output batch.
 //!
-//! ## Translation note — the group key
-//! Kotlin keys the map with `List<Any?>` and relies on the JVM's `hashCode`/`equals`.
-//! Rust needs an explicit key type, so [`GroupKey`] wraps `Vec<ScalarValue>` with
-//! `Hash`/`Eq` impls. Floats are hashed and compared **by bit pattern** (so the two
-//! agree and `NaN` keys group together), matching how a JVM `HashMap` treats
-//! `Double` keys. `ScalarValue` itself is left unchanged (it stays `PartialEq`-only,
-//! since float `Eq`/`Hash` is meaningful only in this grouping context).
+//! ## The group key
+//! [`GroupKey`] wraps `Vec<ScalarValue>` with `Hash`/`Eq` impls. Floats are hashed
+//! and compared **by bit pattern**, so the two agree and `NaN` keys group together.
+//! `ScalarValue` itself is left unchanged (it stays `PartialEq`-only, since float
+//! `Eq`/`Hash` is meaningful only in this grouping context).
 //!
-//! ## Translation note — modes
+//! ## Modes
 //! Single-node `Complete` (the default, and the only mode used until the
 //! `distributed` module 15) calls `accumulate` + `final_value`. `Final` merges
 //! incoming partial state; `Partial` would emit intermediate state. AVG's
@@ -29,13 +26,13 @@ use crate::aggregate_mode::AggregateMode;
 use crate::executor_context::ExecutorContext;
 use crate::expressions::{Accumulator, AccumulatorValue, Expression};
 use crate::physical_plan::PhysicalPlan;
-use datatypes::{record_batch, ArrowVectorBuilder, ColumnVector, RecordBatch, ScalarValue, Schema};
+use datatypes::{ArrowVectorBuilder, ColumnVector, RecordBatch, ScalarValue, Schema, record_batch};
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-/// Group-by hash aggregation. Kotlin `HashAggregateExec`.
+/// Group-by hash aggregation.
 pub struct HashAggregateExec {
     pub input: Arc<dyn PhysicalPlan>,
     pub group_expr: Vec<Arc<dyn Expression>>,
@@ -45,15 +42,20 @@ pub struct HashAggregateExec {
 }
 
 impl HashAggregateExec {
-    /// Single-node (`Complete`) aggregation — the common case, matching Kotlin's
-    /// `mode: AggregateMode = AggregateMode.COMPLETE` default argument.
+    /// Single-node (`Complete`) aggregation — the common case.
     pub fn new(
         input: Arc<dyn PhysicalPlan>,
         group_expr: Vec<Arc<dyn Expression>>,
         aggregate_expr: Vec<Arc<dyn AggregateExpression>>,
         schema: Schema,
     ) -> Self {
-        Self::new_with_mode(input, group_expr, aggregate_expr, schema, AggregateMode::Complete)
+        Self::new_with_mode(
+            input,
+            group_expr,
+            aggregate_expr,
+            schema,
+            AggregateMode::Complete,
+        )
     }
 
     /// Construct with an explicit [`AggregateMode`] (for distributed execution).
@@ -85,7 +87,7 @@ impl PhysicalPlan for HashAggregateExec {
 
     /// Override the [`PhysicalPlan::as_any`] hook so `ParallelContext` can
     /// downcast and recover the concrete aggregate for its partial/final
-    /// split (Kotlin's `when (plan) { is HashAggregateExec -> … }`).
+    /// split.
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -207,7 +209,6 @@ impl fmt::Display for HashAggregateExec {
 }
 
 /// Hash-map key for one group: the tuple of group-by values for a row.
-/// Kotlin used `List<Any?>` + the JVM's hashing; this is the explicit Rust
 /// equivalent. Floats are hashed/compared by bit pattern so `Hash` and `Eq` agree.
 #[derive(Clone)]
 struct GroupKey(Vec<ScalarValue>);
@@ -215,7 +216,11 @@ struct GroupKey(Vec<ScalarValue>);
 impl PartialEq for GroupKey {
     fn eq(&self, other: &Self) -> bool {
         self.0.len() == other.0.len()
-            && self.0.iter().zip(&other.0).all(|(a, b)| scalar_key_eq(a, b))
+            && self
+                .0
+                .iter()
+                .zip(&other.0)
+                .all(|(a, b)| scalar_key_eq(a, b))
     }
 }
 
@@ -266,11 +271,10 @@ fn hash_scalar<H: Hasher>(v: &ScalarValue, state: &mut H) {
 
 #[cfg(test)]
 mod tests {
-    //! Port of `AggregateTest.kt` (the three accumulator tests) plus a group-by
-    //! integration test over `employee.csv` (the §4.6 snapshot check). The Kotlin
-    //! tests use `fuzzer`/logical helpers; here the accumulators are driven
-    //! directly and the integration test builds the physical plan by hand (the
-    //! `query-planner` that normally assembles it is module 7).
+    //! Accumulator tests plus a group-by integration test over `employee.csv`
+    //! (the §4.6 snapshot check). The accumulators are driven directly and the
+    //! integration test builds the physical plan by hand (the `query-planner`
+    //! that normally assembles it is covered in module 7).
     use super::*;
     use crate::column_expression::ColumnExpression;
     use crate::count_expression::CountExpression;
@@ -279,10 +283,10 @@ mod tests {
     use crate::scan_exec::ScanExec;
     use crate::sum_expression::SumExpression;
     use datasource::{CsvDataSource, DataSource};
-    use datatypes::arrow_types::{INT32_TYPE, INT64_TYPE, STRING_TYPE};
     use datatypes::Field;
+    use datatypes::arrow_types::{INT32_TYPE, INT64_TYPE, STRING_TYPE};
 
-    // ---- Port of AggregateTest.kt: accumulators driven directly. ----
+    // ---- Accumulators driven directly. ----
 
     #[test]
     fn min_accumulator() {
@@ -315,8 +319,12 @@ mod tests {
 
     #[test]
     fn group_by_state_min_max_count() {
-        let ds: Arc<dyn DataSource> =
-            Arc::new(CsvDataSource::new("../testdata/employee.csv", None, true, 1024));
+        let ds: Arc<dyn DataSource> = Arc::new(CsvDataSource::new(
+            "../testdata/employee.csv",
+            None,
+            true,
+            1024,
+        ));
         let all: Vec<String> = ds.schema().fields.iter().map(|f| f.name.clone()).collect();
         let scan = ScanExec::new(Arc::clone(&ds), all);
 

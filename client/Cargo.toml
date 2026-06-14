@@ -1,6 +1,6 @@
 [package]
 name         = "client"
-description  = "Flight client wrapper + FlightExecutorClient for the distributed scheduler. Rust port of kquery/client."
+description  = "Flight client wrapper and FlightExecutorClient for the distributed scheduler."
 edition.workspace      = true
 license.workspace      = true
 version.workspace      = true
@@ -27,25 +27,20 @@ prost            = { workspace = true }
 tracing          = { workspace = true }
 
 # Internal — six siblings.
-# - datatypes / datasource / logical-plan / protobuf: per the upstream
-#   Kotlin `client/build.gradle.kts` (no `flight-server` dep — the
-#   wire-level protobuf contract is the entire interface).
-# - distributed: Rust-port addition not present in kquery. We need it to
-#   `impl distributed::ExecutorClient for FlightExecutorClient`, the
-#   concrete client that drives the scheduler over real gRPC. kquery
-#   doesn't have an equivalent (its `Client.kt` is interactive only);
-#   the rquery port is closing the §7 mock rows by adding this here.
-#   Documented in `TRANSLATION_NOTES.md` → Module: client.
-# - sql: needed by `Context::sql` to parse the user's SQL string into
-#   a `LogicalPlan`. kquery's `Context.kt` uses the same module.
+# - datatypes / datasource / logical-plan / protobuf: the wire-level
+#   protobuf contract is the entire interface to `flight-server` (no direct
+#   dep on it from this crate).
+# - distributed: provides the `ExecutorClient` trait that
+#   `FlightExecutorClient` implements; this is the concrete client that
+#   drives the scheduler over real gRPC.
+# - sql: used by `Context::sql` to parse the user's SQL string into a
+#   `LogicalPlan`.
+# - physical-plan: provides `Task` and `ShuffleLocation` — the types
+#   `FlightExecutorClient` ships across the wire.
 datatypes     = { path = "../datatypes" }
 datasource    = { path = "../datasource" }
 logical-plan  = { path = "../logical-plan" }
 protobuf      = { path = "../protobuf" }
-# `physical-plan` is needed for `Task` and `ShuffleLocation` — the types
-# `FlightExecutorClient` ships across the wire. kquery's client doesn't
-# import physical-plan because kquery has no `FlightExecutorClient`; this
-# dep is a rquery-only addition (see flight_executor_client.rs).
 physical-plan = { path = "../physical-plan" }
 distributed   = { path = "../distributed" }
 sql           = { path = "../sql" }

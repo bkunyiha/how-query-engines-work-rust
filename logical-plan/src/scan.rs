@@ -1,7 +1,6 @@
-//! Port of `kquery/logical-plan/src/main/kotlin/Scan.kt`.
 //!
 //! Represents a scan of a data source. The schema is derived once at
-//! construction (Kotlin caches it in `val schema = deriveSchema()`).
+//! construction and cached.
 
 use crate::logical_plan::LogicalPlan;
 use datasource::DataSource;
@@ -15,7 +14,7 @@ pub struct Scan {
     pub path: String,
     pub data_source: Arc<dyn DataSource>,
     pub projection: Vec<String>,
-    /// Cached derived schema (Kotlin `val schema = deriveSchema()`).
+    /// Cached derived schema.
     schema: Schema,
 }
 
@@ -26,10 +25,14 @@ impl Scan {
         projection: Vec<String>,
     ) -> Self {
         let schema = Self::derive_schema(data_source.as_ref(), &projection);
-        Self { path: path.into(), data_source, projection, schema }
+        Self {
+            path: path.into(),
+            data_source,
+            projection,
+            schema,
+        }
     }
 
-    /// Kotlin `deriveSchema()`: the full source schema, or the projected
     /// sub-schema when a projection is given.
     fn derive_schema(data_source: &dyn DataSource, projection: &[String]) -> Schema {
         let schema = data_source.schema();
@@ -55,7 +58,12 @@ impl fmt::Display for Scan {
         if self.projection.is_empty() {
             write!(f, "Scan: {}; projection=None", self.path)
         } else {
-            write!(f, "Scan: {}; projection=[{}]", self.path, self.projection.join(", "))
+            write!(
+                f,
+                "Scan: {}; projection=[{}]",
+                self.path,
+                self.projection.join(", ")
+            )
         }
     }
 }

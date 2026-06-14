@@ -2,30 +2,16 @@
 //!
 //! Core data types — the substrate every other crate builds on.
 //!
-//! ## Kotlin source
-//! Faithful port of `kquery/datatypes/src/main/kotlin/`:
-//! `ArrowFieldVector.kt`, `ArrowTypes.kt`, `ArrowVectorBuilder.kt`,
-//! `ColumnVector.kt`, `LiteralValueVector.kt`, `RecordBatch.kt`,
-//! `Schema.kt`, `ShuffleId.kt`, `ShuffleLocation.kt`.
-//!
 //! ## Design
-//! - Interface hierarchies in Kotlin become Rust `enum`s.
 //! - `ColumnVector` is a trait; concrete impls wrap arrow-rs arrays.
 //! - `Schema` and `Field` are `#[derive(Clone, Debug, PartialEq)]` structs.
-//! - **`ScalarValue`** is added in the Rust port (no Kotlin counterpart) to
-//!   replace the Kotlin `Any?` return type of `ColumnVector.getValue`.
-//!   It is the *only* place this module introduces
-//!   structure that wasn't in the Kotlin original.
-//!
-//! ## Status
-//! Module 1 of 15 — ported. All 9 Kotlin source files have Rust equivalents,
-//! plus the added `scalar_value.rs`. Deliberate divergences: Rayon for
-//! coroutines, arrow-rs `RecordBatch` re-export, no `ArrowAllocator`, and the
-//! builder API shape change.
+//! - [`ScalarValue`] is a typed enum used by physical operators in place of an
+//!   `Any?`-style erased value.
+//! - Concurrency uses Rayon. `RecordBatch` is the arrow-rs type, re-exported
+//!   here. Vector building goes through [`ArrowVectorBuilder`].
 
 // ==============================================================
-// Per-file modules — one for each upstream Kotlin source file,
-// plus `scalar_value` (added to replace Kotlin's `Any?` with a typed enum).
+// Per-file modules.
 // ==============================================================
 pub mod arrow_field_vector;
 pub mod arrow_types;

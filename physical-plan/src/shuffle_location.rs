@@ -1,14 +1,12 @@
-//! Port of `kquery/physical-plan/src/main/kotlin/ShuffleLocation.kt`.
 //!
 //! Describes where the shuffle output for one partition lives, so a downstream
 //! stage can fetch it (locally or via Arrow Flight). Pure data — distributed
 //! execution (modules 12–14) consumes it.
 //!
 //! Note: there is also a `datatypes::ShuffleLocation` (a smaller 3-field variant);
-//! this is the richer 6-field physical-plan version, mirroring kquery's two
-//! same-named types (see `TRANSLATION_NOTES.md`).
+//! this is the richer 6-field physical-plan version.
 
-/// Location of shuffle data for a specific partition. Kotlin `data class ShuffleLocation`.
+/// Location of shuffle data for a specific partition.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ShuffleLocation {
     /// Unique identifier for the job.

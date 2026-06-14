@@ -1,4 +1,3 @@
-//! Port of `kquery/logical-plan/src/main/kotlin/Join.kt`.
 //!
 //! `JoinType` enum and the `Join` logical plan. The output schema concatenates
 //! the two input schemas, dropping the right (or left, for a right join)
@@ -43,12 +42,17 @@ impl Join {
         join_type: JoinType,
         on: Vec<(String, String)>,
     ) -> Self {
-        Self { left: Box::new(left), right: Box::new(right), join_type, on }
+        Self {
+            left: Box::new(left),
+            right: Box::new(right),
+            join_type,
+            on,
+        }
     }
 
     pub fn schema(&self) -> Schema {
         // Keys whose left and right names are identical produce a single output
-        // column rather than two ie if you join two tables using columns with the same name, 
+        // column rather than two ie if you join two tables using columns with the same name,
         // the output schema should include that join column only once.
         let duplicate_keys: HashSet<String> = self
             .on

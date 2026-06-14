@@ -1,10 +1,6 @@
-//! Port of `kquery/flight-server/src/main/kotlin/KQueryFlightProducer.kt`.
-//!
-//! Rust type name: `RQueryFlightProducer` (rebranded from Kotlin's
-//! `KQueryFlightProducer`
-//!
-//! Implements [`arrow_flight::flight_service_server::FlightService`] and is
-//! constructed by the binary in `src/bin/flight_server.rs`.
+//! `RQueryFlightProducer` implements
+//! [`arrow_flight::flight_service_server::FlightService`] and is constructed
+//! by the binary in `src/bin/flight_server.rs`.
 //!
 //! ## Status
 //!
@@ -12,14 +8,14 @@
 //! |------------------------------|-------|
 //! | `do_action("execute_task")`  | **real** — drives intermediate-stage task execution; downcasts to `ShuffleWriterExec`, calls `write_shuffle(&ctx)`, returns `pb::TaskResult` with shuffle locations |
 //! | `do_get`                     | **real** — streams `RecordBatch`es. Dispatches on the decoded `pb::Action`: `task` set → distributed final-stage path (runs `task.plan.execute(&ctx)`); `query` set → interactive path (runs the logical plan via `ExecutionContext`). Both branches share the same sync→async bridge (`spawn_blocking` → bounded mpsc → `FlightDataEncoder`) |
-//! | `handshake`, `list_flights`, `get_flight_info`, `poll_flight_info`, `get_schema`, `do_put`, `do_exchange`, `list_actions` | stub — `Status::unimplemented` (kquery doesn't implement any of these either) |
+//! | `handshake`, `list_flights`, `get_flight_info`, `poll_flight_info`, `get_schema`, `do_put`, `do_exchange`, `list_actions` | stub — `Status::unimplemented` |
 //!
-//! ## Translation note — executor context
-//! The Kotlin `KQueryFlightProducer` carries `executorId`, `executorHost`,
-//! `executorPort`, and a `ShuffleManager` as constructor parameters. The Rust
-//! port bundles those into an [`ExecutorContext`] (`physical-plan/src/executor_context.rs`)
-//! held as a single field on the producer. The bin constructs one
-//! `ExecutorContext` at startup and hands it to [`RQueryFlightProducer::new`].
+//! ## Executor context
+//! Per-executor state — `executor_id`, `executor_host`, `executor_port`, and
+//! the `ShuffleManager` — is bundled into a single [`ExecutorContext`]
+//! (`physical-plan/src/executor_context.rs`) held as one field on the
+//! producer. The bin constructs one `ExecutorContext` at startup and hands
+//! it to [`RQueryFlightProducer::new`].
 
 use arrow_flight::encode::FlightDataEncoderBuilder;
 use arrow_flight::error::FlightError;
@@ -40,13 +36,11 @@ use tonic::{Request, Response, Status, Streaming};
 use tracing::{debug, info};
 
 /// Arrow Flight producer for distributed query execution.
-/// Kotlin `class KQueryFlightProducer : FlightProducer`.
 ///
 /// Held as the service implementation behind
 /// `arrow_flight::flight_service_server::FlightServiceServer::new(producer)`.
 /// The single field — [`ExecutorContext`] — carries the per-executor identity
-/// + shuffle storage used by `do_action("execute_task")` and (later)
-/// `do_get`.
+/// and shuffle storage used by both `do_action("execute_task")` and `do_get`.
 pub struct RQueryFlightProducer {
     ctx: ExecutorContext,
 }
@@ -79,9 +73,8 @@ impl FlightService for RQueryFlightProducer {
         &self,
         _request: Request<Streaming<HandshakeRequest>>,
     ) -> Result<Response<Self::HandshakeStream>, Status> {
-        // kquery's `KQueryFlightProducer` doesn't override `handshake`; the
-        // default JVM Flight impl throws `UnsupportedOperationException`. We
-        // emit the gRPC-canonical equivalent.
+        // No handshake protocol is implemented; respond with the
+        // gRPC-canonical "unimplemented" status.
         Err(Status::unimplemented("handshake"))
     }
 
@@ -89,7 +82,6 @@ impl FlightService for RQueryFlightProducer {
         &self,
         _request: Request<Criteria>,
     ) -> Result<Response<Self::ListFlightsStream>, Status> {
-        // kquery `listFlights` is a `TODO("not implemented")`.
         Err(Status::unimplemented("list_flights"))
     }
 
@@ -97,7 +89,6 @@ impl FlightService for RQueryFlightProducer {
         &self,
         _request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
-        // kquery `getFlightInfo` is a `TODO("not implemented")`.
         Err(Status::unimplemented("get_flight_info"))
     }
 
@@ -105,7 +96,6 @@ impl FlightService for RQueryFlightProducer {
         &self,
         _request: Request<FlightDescriptor>,
     ) -> Result<Response<PollInfo>, Status> {
-        // Newer Flight protocol method; kquery predates it. Stay unimplemented.
         Err(Status::unimplemented("poll_flight_info"))
     }
 
@@ -113,7 +103,6 @@ impl FlightService for RQueryFlightProducer {
         &self,
         _request: Request<FlightDescriptor>,
     ) -> Result<Response<SchemaResult>, Status> {
-        // kquery `getSchema` is not overridden; default throws.
         Err(Status::unimplemented("get_schema"))
     }
 
@@ -121,10 +110,9 @@ impl FlightService for RQueryFlightProducer {
     /// task as Arrow Flight data.
     ///
     /// ### Wire dispatch
-    /// The `pb::Action` carries either `query` (interactive logical plan —
-    /// kquery's shape) or `task` (distributed final task — added for the
-    /// distributed loop). `do_get` checks `task` first and falls back to
-    /// `query`:
+    /// The `pb::Action` carries either `query` (an interactive logical plan)
+    /// or `task` (a distributed final task). `do_get` checks `task` first
+    /// and falls back to `query`:
     ///
     /// - **`action.task` set** — distributed final-stage path. Deserialise
     ///   to a `physical_plan::Task`, run `task.plan.execute(&self.ctx)`.
@@ -132,8 +120,8 @@ impl FlightService for RQueryFlightProducer {
     ///   the `PhysicalPlan::execute` trait method takes `&ExecutorContext`
     ///   and every operator threads it through. This is what
     ///   `FlightExecutorClient::execute_final_task` in module 14 calls.
-    /// - **`action.query` set** — kquery's `getStream` shape. Deserialise
-    ///   to a `LogicalPlan`, run via a fresh `ExecutionContext`. The
+    /// - **`action.query` set** — interactive path. Deserialise to a
+    ///   `LogicalPlan`, run via a fresh `ExecutionContext`. The
     ///   `Context::sql` API in this crate uses this path.
     /// - **Neither set** — `Status::invalid_argument`.
     ///
@@ -163,11 +151,8 @@ impl FlightService for RQueryFlightProducer {
             .map_err(|e| Status::invalid_argument(format!("failed to decode Action: {e}")))?;
 
         // 2 — dispatch on which payload is set. `task` (distributed final
-        // task) takes precedence over `query` (interactive logical plan);
-        // the latter is the kquery shape, the former was added for the
-        // distributed loop.
-        let (tx, rx) =
-            tokio::sync::mpsc::channel::<Result<RecordBatch, FlightError>>(4);
+        // task) takes precedence over `query` (interactive logical plan).
+        let (tx, rx) = tokio::sync::mpsc::channel::<Result<RecordBatch, FlightError>>(4);
 
         if let Some(task_info) = action.task {
             // ── Distributed final-stage path ──
@@ -243,7 +228,6 @@ impl FlightService for RQueryFlightProducer {
         &self,
         _request: Request<Streaming<FlightData>>,
     ) -> Result<Response<Self::DoPutStream>, Status> {
-        // kquery `acceptPut` is a `TODO("not implemented")`.
         Err(Status::unimplemented("do_put"))
     }
 
@@ -251,13 +235,12 @@ impl FlightService for RQueryFlightProducer {
         &self,
         _request: Request<Streaming<FlightData>>,
     ) -> Result<Response<Self::DoExchangeStream>, Status> {
-        // Newer Flight protocol method; kquery predates it. Stay unimplemented.
         Err(Status::unimplemented("do_exchange"))
     }
 
-    /// Dispatch on `action.type`. Only `"execute_task"` is implemented (Kotlin
-    /// matches the same string), returns a [`pb::TaskResult`] protobuf carrying
-    /// the shuffle locations the task produced.
+    /// Dispatch on `action.type`. Only `"execute_task"` is implemented;
+    /// returns a [`pb::TaskResult`] protobuf carrying the shuffle locations
+    /// the task produced.
     ///
     /// ### Wire flow
     /// 1. `action.body` (bytes) is decoded as [`pb::TaskInfo`] via `prost::Message::decode`.
@@ -266,8 +249,8 @@ impl FlightService for RQueryFlightProducer {
     /// 3. Dispatch on the plan's concrete type via `as_any().downcast_ref::<ShuffleWriterExec>()`:
     ///    - `ShuffleWriterExec` → call [`ShuffleWriterExec::write_shuffle`],
     ///      get back `Vec<ShuffleLocation>`.
-    ///    - Any other operator → drain `execute(&ctx)` for side effects and return
-    ///      no locations (matches Kotlin's `else` branch in `executeTask`).
+    ///    - Any other operator → drain `execute(&ctx)` for side effects and
+    ///      return no locations.
     /// 4. Build a [`pb::TaskResult`] tagged with the task identity and the
     ///    location list, encode via `prost::Message::encode_to_vec`, wrap as
     ///    `arrow_flight::Result { body: bytes }`, return a one-element stream.
@@ -277,8 +260,6 @@ impl FlightService for RQueryFlightProducer {
     /// For small inputs that's fine; for production-shaped workloads the
     /// right move would be `tokio::task::spawn_blocking` to offload the
     /// CPU/disk work — which is what `do_get` uses for its streaming case.
-    /// We deliberately keep `do_action` inline here to match kquery's
-    /// Kotlin shape (which has no equivalent off-thread offload).
     async fn do_action(
         &self,
         request: Request<Action>,
@@ -304,26 +285,24 @@ impl FlightService for RQueryFlightProducer {
                 debug!("Task plan: {}", task.plan);
 
                 // 3 — dispatch on plan type
-                let locations = if let Some(writer) =
-                    task.plan.as_any().downcast_ref::<ShuffleWriterExec>()
-                {
-                    writer.write_shuffle(&self.ctx)
-                } else {
-                    // Non-shuffle tasks only make sense here if the plan is a sink
-                    // operator (write table/file, materialize cache, build stats, etc.).
-                    // We drain to force those side effects; result rows belong on do_get.
-                    // Matches Kotlin's else branch in executeTask.
-                    // Examples:
-                    // - INSERT INTO target SELECT ... The query computes rows, but the useful effect is writing them into target.  
-                    // - CREATE TABLE new_table AS SELECT ... The result rows are materialized into a new table/file, not returned to the client.
-                    // - COPY (SELECT ...) TO 'file.parquet' The query output is written to external storage.
-                    // - Shuffle/materialization stages in distributed execution A stage computes rows, partitions them, and writes them to disk/object storage so later stages can read them.
-                    // - Cache population A query/subplan is executed to fill a cache; the caller may not need the rows immediately.
-                    // - Index/statistics building The engine scans data and computes/writes index pages, zone maps, histograms, etc.
-                    // - Validation/check operations A query may scan and verify constraints/data integrity, returning only success/failure or a count elsewhere.
-                    task.plan.execute(&self.ctx).for_each(|_| {});
-                    Vec::new()
-                };
+                let locations =
+                    if let Some(writer) = task.plan.as_any().downcast_ref::<ShuffleWriterExec>() {
+                        writer.write_shuffle(&self.ctx)
+                    } else {
+                        // Non-shuffle tasks only make sense here if the plan is a sink
+                        // operator (write table/file, materialize cache, build stats, etc.).
+                        // We drain to force those side effects; result rows belong on do_get.
+                        // Examples:
+                        // - INSERT INTO target SELECT ... The query computes rows, but the useful effect is writing them into target.
+                        // - CREATE TABLE new_table AS SELECT ... The result rows are materialized into a new table/file, not returned to the client.
+                        // - COPY (SELECT ...) TO 'file.parquet' The query output is written to external storage.
+                        // - Shuffle/materialization stages in distributed execution A stage computes rows, partitions them, and writes them to disk/object storage so later stages can read them.
+                        // - Cache population A query/subplan is executed to fill a cache; the caller may not need the rows immediately.
+                        // - Index/statistics building The engine scans data and computes/writes index pages, zone maps, histograms, etc.
+                        // - Validation/check operations A query may scan and verify constraints/data integrity, returning only success/failure or a count elsewhere.
+                        task.plan.execute(&self.ctx).for_each(|_| {});
+                        Vec::new()
+                    };
                 debug!("Task produced {} shuffle location(s)", locations.len());
 
                 // 4 — build TaskResult, encode, wrap
@@ -352,7 +331,6 @@ impl FlightService for RQueryFlightProducer {
         &self,
         _request: Request<Empty>,
     ) -> Result<Response<Self::ListActionsStream>, Status> {
-        // kquery `listActions` is a `TODO("not implemented")`.
         Err(Status::unimplemented("list_actions"))
     }
 }
@@ -369,9 +347,7 @@ mod tests {
     use arrow_flight::Action;
     use datasource::{CsvDataSource, DataSource};
     use futures::StreamExt;
-    use physical_plan::{
-        ColumnExpression, PhysicalPlan, ScanExec, ShuffleWriterExec, Task,
-    };
+    use physical_plan::{ColumnExpression, PhysicalPlan, ScanExec, ShuffleWriterExec, Task};
     use protobuf::serialize_task;
     use std::sync::Arc;
 
@@ -386,10 +362,8 @@ mod tests {
     }
 
     fn build_task() -> Task {
-        let ds: Arc<dyn DataSource> =
-            Arc::new(CsvDataSource::new(EMPLOYEE_CSV, None, true, 1024));
-        let columns: Vec<String> =
-            ds.schema().fields.iter().map(|f| f.name.clone()).collect();
+        let ds: Arc<dyn DataSource> = Arc::new(CsvDataSource::new(EMPLOYEE_CSV, None, true, 1024));
+        let columns: Vec<String> = ds.schema().fields.iter().map(|f| f.name.clone()).collect();
         let scan: Arc<dyn PhysicalPlan> = Arc::new(ScanExec::new(Arc::clone(&ds), columns));
         let writer: Arc<dyn PhysicalPlan> = Arc::new(ShuffleWriterExec::new(
             scan,
@@ -495,8 +469,7 @@ mod tests {
         let producer = RQueryFlightProducer::new(ctx);
 
         // Build a LogicalPlan: scan employee.csv with all columns.
-        let ds: Arc<dyn DataSource> =
-            Arc::new(CsvDataSource::new(EMPLOYEE_CSV, None, true, 1024));
+        let ds: Arc<dyn DataSource> = Arc::new(CsvDataSource::new(EMPLOYEE_CSV, None, true, 1024));
         let logical_plan = LogicalPlan::Scan(Scan::new(EMPLOYEE_CSV, ds, vec![]));
 
         // Serialise as Action protobuf and wrap in a Ticket.

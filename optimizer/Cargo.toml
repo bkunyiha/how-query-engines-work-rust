@@ -1,6 +1,6 @@
 [package]
 name         = "optimizer"
-description  = "Logical optimisation rules: ProjectionPushDown, etc. Rust port of kquery/optimizer."
+description  = "Logical optimisation rules: ProjectionPushDown, etc."
 edition.workspace      = true
 license.workspace      = true
 version.workspace      = true
@@ -11,5 +11,5 @@ rust-version.workspace = true
 logical-plan = { path = "../logical-plan" }
 
 [dev-dependencies]
-# Used only by OptimizerTest, which scans a CsvDataSource.
+# Used only by the optimizer test, which scans a CsvDataSource.
 datasource = { path = "../datasource" }

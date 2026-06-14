@@ -1,34 +1,23 @@
-//! Port of `kquery/query-planner/src/main/kotlin/QueryPlanner.kt`.
-//!
 //! Translates a `LogicalPlan` (what to compute) into a `PhysicalPlan` (how to
-//! run it) — the seam between the planner and the executor. Two `match` functions:
-//! `create_physical_plan` over the six `LogicalPlan` operators and
-//! `create_physical_expr` over the `LogicalExpr` variants. The most boring module
-//! in the workspace, by design.
+//! run it) — the seam between the planner and the executor. Two `match`
+//! functions: `create_physical_plan` over the six `LogicalPlan` operators and
+//! `create_physical_expr` over the `LogicalExpr` variants. The most boring
+//! module in the workspace, by design.
 //!
-//! ## Translation notes
-//! - **Exhaustive matches, no catch-all.** Kotlin's `when (plan)` / `when (expr)`
-//!   ended in `else -> throw IllegalStateException` because `LogicalPlan` /
-//!   `LogicalExpr` were open interfaces. Here both are closed enums (§3.1), so the
-//!   matches are exhaustive. Variants that genuinely have no physical counterpart
-//!   keep an explicit `panic!` arm carrying the same "unsupported" message Kotlin's
-//!   `else` threw.
-//! - **Aggregates.** kquery's `AggregateExpr` is an *open* `abstract class` (not
-//!   `sealed`), so its inline `when (it) { is Max -> … }` needs an `else -> throw`:
-//!   the compiler can't prove an open hierarchy is exhaustive. Here `AggregateExpr`
-//!   is a closed enum (§3.1), so the equivalent `match` is exhaustive with no
-//!   catch-all — `CountDistinct` keeps an explicit `panic!` arm (it has no physical
-//!   operator; kquery's planner doesn't lower it either). The dispatch lives in a
-//!   `create_aggregate_expr` helper purely for readability; it is behaviorally
-//!   identical to Kotlin's inline `when`. See `TRANSLATION_NOTES.md` →
-//!   *Module: query-planner* for the full why.
-//! - **Variants with no physical mapping** (faithful to Kotlin's `else -> throw`,
-//!   plus the Rust-only logical variants): `Not`, `Modulus`, `ScalarFunction`,
-//!   `LiteralFloat` (no physical float-literal expression — kquery has none either),
-//!   and an `AggregateExpr` used as a scalar expression (handled by the `Aggregate`
-//!   operator, never planned standalone). `LiteralDate` IS lowered here — the
-//!   `NaiveDate` → days-since-Unix-epoch conversion mirrors Kotlin's
-//!   `expr.value.toEpochDay().toInt()`.
+//! ## Notes
+//! - **Exhaustive matches, no catch-all.** Both `LogicalPlan` and `LogicalExpr`
+//!   are closed enums (§3.1), so the matches are exhaustive. Variants that
+//!   genuinely have no physical counterpart use an explicit `panic!` arm with
+//!   an "unsupported" message.
+//! - **Aggregates.** `AggregateExpr` is a closed enum, so the dispatch is
+//!   exhaustive with no catch-all. `CountDistinct` keeps an explicit `panic!`
+//!   arm because it has no physical operator. The dispatch lives in a
+//!   `create_aggregate_expr` helper purely for readability.
+//! - **Variants with no physical mapping**: `Not`, `Modulus`, `ScalarFunction`,
+//!   `LiteralFloat` (no physical float-literal expression), and an
+//!   `AggregateExpr` used as a scalar expression (handled by the `Aggregate`
+//!   operator, never planned standalone). `LiteralDate` IS lowered here —
+//!   `NaiveDate::num_days_from_ce()` converted to days-since-Unix-epoch.
 
 use datatypes::Schema;
 use logical_plan::{AggregateExpr, LogicalExpr, LogicalPlan};
@@ -45,16 +34,14 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 /// Convert a `chrono::NaiveDate` to "days since the Unix epoch" (1970-01-01).
-/// This is the Rust analogue of Kotlin's `LocalDate.toEpochDay().toInt()`,
-/// used to lower a logical `LiteralDate(NaiveDate)` into a physical
+/// Used to lower a logical `LiteralDate(NaiveDate)` into a physical
 /// `LiteralDateExpression { days_since_epoch: i32 }`.
 fn days_since_unix_epoch(date: chrono::NaiveDate) -> i32 {
-    let epoch = chrono::NaiveDate::from_ymd_opt(1970, 1, 1)
-        .expect("1970-01-01 is a valid date");
+    let epoch = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).expect("1970-01-01 is a valid date");
     (date - epoch).num_days() as i32
 }
 
-/// Creates a physical query plan from a logical query plan. Kotlin `class QueryPlanner`.
+/// Creates a physical query plan from a logical query plan.
 #[derive(Default)]
 pub struct QueryPlanner;
 
@@ -63,16 +50,17 @@ impl QueryPlanner {
         QueryPlanner
     }
 
-    /// Create a physical plan from a logical plan. Kotlin `createPhysicalPlan`.
+    /// Create a physical plan from a logical plan.
     ///
     /// Returns `Arc<dyn PhysicalPlan>` (not `Box`) — matches DataFusion's
     /// `ExecutionPlan` shape, lets the planner Arc-share subtrees, and lets
     /// `DistributedPlanner` rewrite plans via `with_new_children`.
     pub fn create_physical_plan(&self, plan: &LogicalPlan) -> Arc<dyn PhysicalPlan> {
         match plan {
-            LogicalPlan::Scan(s) => {
-                Arc::new(ScanExec::new(s.data_source.clone(), s.projection.clone()))
-            }
+            LogicalPlan::Scan(s) => Arc::new(ScanExec::new(
+                Arc::clone(&s.data_source),
+                s.projection.clone(),
+            )),
             LogicalPlan::Selection(s) => {
                 let input = self.create_physical_plan(&s.input);
                 let filter_expr = self.create_physical_expr(&s.expr, &s.input);
@@ -87,7 +75,11 @@ impl QueryPlanner {
                     .collect();
                 let projection_schema =
                     Schema::new(p.expr.iter().map(|e| e.to_field(&p.input)).collect());
-                Arc::new(ProjectionExec::new(input, projection_schema, projection_expr))
+                Arc::new(ProjectionExec::new(
+                    input,
+                    projection_schema,
+                    projection_expr,
+                ))
             }
             LogicalPlan::Aggregate(a) => {
                 let input = self.create_physical_plan(&a.input);
@@ -130,28 +122,26 @@ impl QueryPlanner {
                             .unwrap_or_else(|| panic!("No column named '{left_col}' in left input"))
                     })
                     .collect();
-                let right_keys: Vec<usize> = j
-                    .on
-                    .iter()
-                    .map(|(_, right_col)| {
-                        right_schema
-                            .fields
-                            .iter()
-                            .position(|f| &f.name == right_col)
-                            .unwrap_or_else(|| {
-                                panic!("No column named '{right_col}' in right input")
-                            })
-                    })
-                    .collect();
+                let right_keys: Vec<usize> =
+                    j.on.iter()
+                        .map(|(_, right_col)| {
+                            right_schema
+                                .fields
+                                .iter()
+                                .position(|f| &f.name == right_col)
+                                .unwrap_or_else(|| {
+                                    panic!("No column named '{right_col}' in right input")
+                                })
+                        })
+                        .collect();
 
                 // Right columns to exclude: duplicate join keys with the same name
                 // on both sides (so the joined row doesn't carry the key twice).
-                let duplicate_key_names: HashSet<String> = j
-                    .on
-                    .iter()
-                    .filter(|(l, r)| l == r)
-                    .map(|(_, r)| r.clone())
-                    .collect();
+                let duplicate_key_names: HashSet<String> =
+                    j.on.iter()
+                        .filter(|(l, r)| l == r)
+                        .map(|(_, r)| r.clone())
+                        .collect();
                 let right_columns_to_exclude: HashSet<usize> = right_schema
                     .fields
                     .iter()
@@ -179,7 +169,6 @@ impl QueryPlanner {
     }
 
     /// Build the physical aggregate expression for one logical `AggregateExpr`.
-    /// Kotlin: the `when (it) { is Max -> MaxExpression(...) … }` block inside the
     /// `Aggregate` branch.
     fn create_aggregate_expr(
         &self,
@@ -187,21 +176,28 @@ impl QueryPlanner {
         input: &LogicalPlan,
     ) -> Arc<dyn AggregateExpression> {
         match agg {
-            AggregateExpr::Max(e) => Arc::new(MaxExpression::new(self.create_physical_expr(e, input))),
-            AggregateExpr::Min(e) => Arc::new(MinExpression::new(self.create_physical_expr(e, input))),
-            AggregateExpr::Sum(e) => Arc::new(SumExpression::new(self.create_physical_expr(e, input))),
-            AggregateExpr::Avg(e) => Arc::new(AvgExpression::new(self.create_physical_expr(e, input))),
+            AggregateExpr::Max(e) => {
+                Arc::new(MaxExpression::new(self.create_physical_expr(e, input)))
+            }
+            AggregateExpr::Min(e) => {
+                Arc::new(MinExpression::new(self.create_physical_expr(e, input)))
+            }
+            AggregateExpr::Sum(e) => {
+                Arc::new(SumExpression::new(self.create_physical_expr(e, input)))
+            }
+            AggregateExpr::Avg(e) => {
+                Arc::new(AvgExpression::new(self.create_physical_expr(e, input)))
+            }
             AggregateExpr::Count(e) => {
                 Arc::new(CountExpression::new(self.create_physical_expr(e, input)))
             }
-            // kquery's planner doesn't lower COUNT(DISTINCT) either.
             AggregateExpr::CountDistinct(_) => {
                 panic!("Unsupported aggregate function: COUNT(DISTINCT ...)")
             }
         }
     }
 
-    /// Create a physical expression from a logical expression. Kotlin `createPhysicalExpr`.
+    /// Create a physical expression from a logical expression.
     pub fn create_physical_expr(
         &self,
         expr: &LogicalExpr,
@@ -211,9 +207,8 @@ impl QueryPlanner {
             LogicalExpr::LiteralLong(n) => Arc::new(LiteralLongExpression::new(*n)),
             LogicalExpr::LiteralDouble(n) => Arc::new(LiteralDoubleExpression::new(*n)),
             LogicalExpr::LiteralString(s) => Arc::new(LiteralStringExpression::new(s.clone())),
-            // Kotlin: `is LiteralDate -> LiteralDateExpression(expr.value.toEpochDay().toInt())`.
-            // The `NaiveDate`-to-days-since-Unix-epoch arithmetic is `chrono`'s
-            // equivalent of `LocalDate::toEpochDay()`.
+            // Lower a `LiteralDate` to a date literal expressed as days since
+            // the Unix epoch.
             LogicalExpr::LiteralDate(date) => {
                 Arc::new(LiteralDateExpression::new(days_since_unix_epoch(*date)))
             }
@@ -226,10 +221,12 @@ impl QueryPlanner {
                     self.create_physical_expr(interval, input),
                 ))
             }
-            LogicalExpr::DateAddInterval { date, interval } => Arc::new(DateAddIntervalExpression::new(
-                self.create_physical_expr(date, input),
-                self.create_physical_expr(interval, input),
-            )),
+            LogicalExpr::DateAddInterval { date, interval } => {
+                Arc::new(DateAddIntervalExpression::new(
+                    self.create_physical_expr(date, input),
+                    self.create_physical_expr(interval, input),
+                ))
+            }
             LogicalExpr::ColumnIndex(i) => Arc::new(ColumnExpression::new(*i)),
             LogicalExpr::Column(name) => {
                 let i = input
@@ -297,7 +294,7 @@ impl QueryPlanner {
                 self.create_physical_expr(r, input),
             )),
 
-            // --- Variants with no physical counterpart (Kotlin's `else -> throw`). ---
+            // --- Variants with no physical counterpart. ---
             LogicalExpr::LiteralFloat(_) => {
                 panic!("LiteralFloat has no physical expression; use LiteralDouble")
             }
@@ -316,17 +313,14 @@ impl QueryPlanner {
 
 #[cfg(test)]
 mod tests {
-    //! Port of `QueryPlannerTest.kt` (`plan aggregate query`). The Kotlin test
-    //! asserts an exact `pretty()` string; the Rust `Display` formats differ
-    //! (`mode=Complete` vs Kotlin `COMPLETE`, and a different `Schema`/`ScanExec`
-    //! rendering), so this asserts the plan *structure* instead: the root is a
-    //! `HashAggregateExec` over a single `ScanExec` leaf, with the expected
-    //! resolved column indices in its `Display`.
+    //! Tests for `plan aggregate query`. Asserts the plan *structure*: the
+    //! root is a `HashAggregateExec` over a single `ScanExec` leaf, with the
+    //! expected resolved column indices in its `Display`.
     use super::*;
     use datasource::InMemoryDataSource;
     use datatypes::arrow_types::{DOUBLE_TYPE, UINT32_TYPE};
     use datatypes::{Field, Schema};
-    use logical_plan::{col, max, DataFrame, LogicalPlan, Scan};
+    use logical_plan::{DataFrame, LogicalPlan, Scan, col, max};
     use optimizer::Optimizer;
     use std::sync::Arc;
 
@@ -357,7 +351,9 @@ mod tests {
         // gated `where Self: Sized` and isn't callable on `Arc<dyn PhysicalPlan>`.)
         let pretty = physical_plan::format(physical.as_ref());
         assert!(
-            pretty.starts_with("HashAggregateExec: groupExpr=[#1], aggrExpr=[MAX(#0)], mode=Complete"),
+            pretty.starts_with(
+                "HashAggregateExec: groupExpr=[#1], aggrExpr=[MAX(#0)], mode=Complete"
+            ),
             "unexpected root line: {pretty}"
         );
 
@@ -366,7 +362,10 @@ mod tests {
         assert_eq!(children.len(), 1);
         assert!(children[0].children().is_empty());
         let scan_line = children[0].to_string();
-        assert!(scan_line.starts_with("ScanExec:"), "expected ScanExec: {scan_line}");
+        assert!(
+            scan_line.starts_with("ScanExec:"),
+            "expected ScanExec: {scan_line}"
+        );
         assert!(scan_line.contains("max_fare") && scan_line.contains("passenger_count"));
 
         // Output schema is the aggregate's: [passenger_count, MAX(max_fare)].

@@ -1,23 +1,19 @@
-//! Port of `kquery/physical-plan/src/main/kotlin/LimitExec.kt`.
 //!
 //! Stops emitting rows once `limit` rows have been produced. Full batches pass
 //! through untouched until the running budget would be exceeded; the boundary
 //! batch is truncated to exactly the remaining count and the stream then ends.
 //!
-//! ## Translation note — `sequence { … yield … }` → `Iterator::scan`
-//! Kotlin uses a coroutine builder (`sequence { var remaining = limit; for (batch in …) { … yield(…) } }`)
-//! to carry the mutable `remaining` budget across batches. The Rust equivalent is
-//! `Iterator::scan`, which threads a mutable state value through the stream and
-//! ends iteration as soon as the closure returns `None` — exactly the early-exit
-//! the Kotlin `break` provides.
+//! ## Implementation — `Iterator::scan` for early exit
+//! `Iterator::scan` threads a mutable `remaining` budget through the stream and
+//! ends iteration as soon as the closure returns `None`, giving the operator a
+//! clean early-exit when the budget is exhausted.
 
 use crate::executor_context::ExecutorContext;
 use crate::physical_plan::PhysicalPlan;
-use datatypes::{record_batch, ArrowVectorBuilder, ColumnVector, RecordBatch, Schema};
+use datatypes::{ArrowVectorBuilder, ColumnVector, RecordBatch, Schema, record_batch};
 use std::sync::Arc;
 
-/// Execute a limit. Kotlin `LimitExec(val input: PhysicalPlan, val limit: Int)`
-/// (`Int` → `usize`, a row count).
+/// Execute a limit. `limit` is a row count.
 pub struct LimitExec {
     pub input: Arc<dyn PhysicalPlan>,
     pub limit: usize,
@@ -42,22 +38,26 @@ impl PhysicalPlan for LimitExec {
         // Limit truncates input — no context use; pass through.
         let schema = self.input.schema();
         // `scan` carries `remaining` (the budget) across batches; returning `None`
-        // ends the stream, mirroring the Kotlin coroutine's `break`.
-        Box::new(self.input.execute(ctx).scan(self.limit, move |remaining, batch| {
-            if *remaining == 0 {
-                return None;
-            }
-            let rows = batch.num_rows();
-            if rows <= *remaining {
-                *remaining -= rows;
-                Some(batch)
-            } else {
-                // Truncate this boundary batch to the remaining count, then stop.
-                let take = *remaining;
-                *remaining = 0;
-                Some(truncate(&batch, take, &schema))
-            }
-        }))
+        // ends the stream as soon as the budget is exhausted.
+        Box::new(
+            self.input
+                .execute(ctx)
+                .scan(self.limit, move |remaining, batch| {
+                    if *remaining == 0 {
+                        return None;
+                    }
+                    let rows = batch.num_rows();
+                    if rows <= *remaining {
+                        *remaining -= rows;
+                        Some(batch)
+                    } else {
+                        // Truncate this boundary batch to the remaining count, then stop.
+                        let take = *remaining;
+                        *remaining = 0;
+                        Some(truncate(&batch, take, &schema))
+                    }
+                }),
+        )
     }
 
     fn children(&self) -> Vec<&Arc<dyn PhysicalPlan>> {
@@ -90,7 +90,7 @@ impl std::fmt::Display for LimitExec {
 }
 
 /// Build a new batch containing only the first `n` rows of `batch`, copying
-/// cell-by-cell (Kotlin walks the source vector and `set`s into a fresh one).
+/// cell-by-cell.
 fn truncate(batch: &RecordBatch, n: usize, schema: &Schema) -> RecordBatch {
     let columns: Vec<Box<dyn ColumnVector>> = (0..batch.num_columns())
         .map(|i| {
@@ -108,16 +108,14 @@ fn truncate(batch: &RecordBatch, n: usize, schema: &Schema) -> RecordBatch {
 
 #[cfg(test)]
 mod tests {
-    //! Rust-port verification of the phase-2 end-to-end pipeline. There is no
-    //! upstream operator test (the Kotlin operator tests live in `AggregateTest` /
-    //! the SQL/query-planner suites), so this drives `ScanExec` →
+    //! End-to-end pipeline verification: drives `ScanExec` →
     //! `Projection`/`Selection`/`LimitExec` over the `employee.csv` fixture and
-    //! checks row/column counts. Uses `CsvDataSource` directly (the `fuzzer` crate
-    //! is module 9, unported).
+    //! checks row/column counts. Uses `CsvDataSource` directly (the `fuzzer`
+    //! crate covered in module 9 is not yet implemented).
     use super::*;
+    use crate::boolean_expression::GtExpression;
     use crate::column_expression::ColumnExpression;
     use crate::expressions::LiteralLongExpression;
-    use crate::boolean_expression::GtExpression;
     use crate::projection_exec::ProjectionExec;
     use crate::scan_exec::ScanExec;
     use crate::selection_exec::SelectionExec;

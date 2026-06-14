@@ -1,27 +1,22 @@
-//! Port of `kquery/optimizer/src/main/kotlin/Optimizer.kt`.
+//! Holds the `OptimizerRule` trait, the `Optimizer` orchestrator (which runs
+//! the rules in a fixed order), and the `extract_columns` helpers that collect
+//! the column names an expression references.
 //!
-//! Holds the `OptimizerRule` trait, the `Optimizer` orchestrator (which runs the
-//! rules in a fixed order), and the `extract_columns` helpers that collect the
-//! column names an expression references.
-//!
-//! ## Translation notes
-//! - Kotlin's `interface OptimizerRule` → a Rust `trait`.
-//! - Kotlin's two `extractColumns` overloads (one for `List<LogicalExpr>`, one
-//!   for a single `LogicalExpr`) become `extract_columns_list` and
-//!   `extract_columns`.
-//! - Kotlin's `IllegalStateException` throws become `panic!` (§3.6).
+//! `extract_columns_list` takes a slice of expressions; `extract_columns`
+//! takes a single expression. Unreachable invariants are reported via
+//! `panic!` (§3.6).
 
 use logical_plan::{AggregateExpr, LogicalExpr, LogicalPlan};
 use std::collections::HashSet;
 
 use crate::projection_push_down_rule::ProjectionPushDownRule;
 
-/// A logical-plan rewrite rule. Kotlin: `interface OptimizerRule`.
+/// A logical-plan rewrite rule.
 pub trait OptimizerRule {
     fn optimize(&self, plan: &LogicalPlan) -> LogicalPlan;
 }
 
-/// Runs the optimisation rules in a fixed order. Kotlin: `class Optimizer`.
+/// Runs the optimisation rules in a fixed order.
 #[derive(Default)]
 pub struct Optimizer;
 
@@ -30,7 +25,6 @@ impl Optimizer {
         Optimizer
     }
 
-    /// Kotlin: `optimize(plan)`. There is only one rule so far; later this will
     /// apply a list of rules in order.
     pub fn optimize(&self, plan: &LogicalPlan) -> LogicalPlan {
         let rule = ProjectionPushDownRule;
@@ -38,8 +32,7 @@ impl Optimizer {
     }
 }
 
-/// Collect the column names referenced by each expression in `exprs`. Kotlin:
-/// the `List<LogicalExpr>` overload of `extractColumns`.
+/// Collect the column names referenced by each expression in `exprs`.
 pub fn extract_columns_list(
     exprs: &[LogicalExpr],
     input: &LogicalPlan,
@@ -50,8 +43,7 @@ pub fn extract_columns_list(
     }
 }
 
-/// Collect the column names referenced by a single expression. Kotlin: the
-/// `LogicalExpr` overload of `extractColumns`.
+/// Collect the column names referenced by a single expression.
 pub fn extract_columns(expr: &LogicalExpr, input: &LogicalPlan, accum: &mut HashSet<String>) {
     match expr {
         // A column-by-index resolves to a name via the input's schema.
@@ -61,8 +53,7 @@ pub fn extract_columns(expr: &LogicalExpr, input: &LogicalPlan, accum: &mut Hash
         LogicalExpr::Column(name) => {
             accum.insert(name.clone());
         }
-        // Kotlin's `BinaryExpr` is the base class of every two-operand
-        // expression; here that is each `{ l, r }` variant.
+        // Every two-operand expression `{ l, r }` variant.
         LogicalExpr::Eq { l, r }
         | LogicalExpr::Neq { l, r }
         | LogicalExpr::Gt { l, r }
@@ -92,16 +83,15 @@ pub fn extract_columns(expr: &LogicalExpr, input: &LogicalPlan, accum: &mut Hash
             extract_columns(date, input, accum);
             extract_columns(interval, input, accum);
         }
-        // Mirrors Kotlin's `else -> throw`. Anything else (`LiteralFloat`, `Not`,
-        // `ScalarFunction`, or a bare `AggregateExpr`) is unsupported here.
-        // Aggregates never reach this function: the rule first unwraps each to
-        // its argument expression (see `aggregate_inner` and
-        // `projection_push_down_rule.rs`).
+        // Anything else (`LiteralFloat`, `Not`, `ScalarFunction`, or a bare
+        // `AggregateExpr`) is unsupported here. Aggregates never reach this
+        // function: the rule first unwraps each to its argument expression
+        // (see `aggregate_inner` and `projection_push_down_rule.rs`).
         other => panic!("extractColumns does not support expression: {other:?}"),
     }
 }
 
-/// The argument expression inside an aggregate. Kotlin: `AggregateExpr.expr`.
+/// The argument expression inside an aggregate.
 pub fn aggregate_inner(agg: &AggregateExpr) -> &LogicalExpr {
     match agg {
         AggregateExpr::Sum(e)

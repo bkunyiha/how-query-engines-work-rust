@@ -1,5 +1,3 @@
-//! Port of `kquery/protobuf/src/main/kotlin/PhysicalPlanDeserializer.kt`.
-//!
 //! `pb::PhysicalPlanNode` → `Arc<dyn PhysicalPlan>`,
 //! `pb::PhysicalExprNode` → `Arc<dyn Expression>`, and the inverses of every
 //! conversion in `physical_plan_serializer.rs`.
@@ -11,16 +9,15 @@
 //! `crate::deserialize_field`) — both produce the same domain types from the
 //! same `pb::*` messages.
 //!
-//! ## Translation notes
+//! ## Notes
 //! - **No downcast plumbing needed.** The deserializer builds concrete types
 //!   from proto messages and returns boxed trait objects — no
 //!   `as_X`-style branching on existing values.
 //! - **Schema is required for `ScanExecNode`.** The serializer always emits
-//!   `schema` for scans (matching Kotlin); the deserializer unwraps it
-//!   accordingly. For CSV scans the materialised `Schema` is passed to
-//!   `CsvDataSource::new(...)` so the source uses the wire schema rather than
-//!   re-inferring from the file (mirroring kquery's `CsvDataSource(path,
-//!   schema, true, 1024)`).
+//!   `schema` for scans; the deserializer unwraps it accordingly. For CSV
+//!   scans the materialised `Schema` is passed to `CsvDataSource::new(...)`
+//!   so the source uses the wire schema rather than re-inferring from the
+//!   file.
 //! - **`ShuffleLocation` is `physical_plan::ShuffleLocation`** (the 6-field
 //!   one matching the proto), not the 4-field `datatypes::ShuffleLocation`.
 //! - **Orphan rule note.** The deserializer's leaf conversions (e.g.,
@@ -36,26 +33,24 @@ use datasource::{CsvDataSource, DataSource, ParquetDataSource};
 use datatypes::arrow_types;
 use physical_plan::{
     AddExpression, AggregateExpression, AggregateMode, AndExpression, AvgExpression,
-    CastExpression, ColumnExpression, CountExpression, DivideExpression, EqExpression,
-    Expression, GtEqExpression, GtExpression, HashAggregateExec, LiteralDateExpression,
+    CastExpression, ColumnExpression, CountExpression, DivideExpression, EqExpression, Expression,
+    GtEqExpression, GtExpression, HashAggregateExec, LiteralDateExpression,
     LiteralDoubleExpression, LiteralLongExpression, LiteralStringExpression, LtEqExpression,
-    LtExpression, MaxExpression, MinExpression, MultiplyExpression, NeqExpression,
-    OrExpression, PhysicalPlan, ProjectionExec, ScanExec, SelectionExec, ShuffleLocation,
-    ShuffleReaderExec, ShuffleWriterExec, SubtractExpression, SumExpression, Task,
+    LtExpression, MaxExpression, MinExpression, MultiplyExpression, NeqExpression, OrExpression,
+    PhysicalPlan, ProjectionExec, ScanExec, SelectionExec, ShuffleLocation, ShuffleReaderExec,
+    ShuffleWriterExec, SubtractExpression, SumExpression, Task,
 };
 
 use arrow_schema::DataType;
 use std::sync::Arc;
 
 /// `pb::PhysicalPlanNode` → `Arc<dyn PhysicalPlan>`.
-/// Kotlin `fromProto(node: PhysicalPlanNode): PhysicalPlan`.
 pub fn deserialize_physical_plan(node: &pb::PhysicalPlanNode) -> Arc<dyn PhysicalPlan> {
     use pb::physical_plan_node::PlanType;
     match node.plan_type.as_ref() {
         Some(PlanType::Scan(scan)) => {
-            let schema = crate::deserialize_schema(
-                scan.schema.as_ref().expect("ScanExecNode.schema unset"),
-            );
+            let schema =
+                crate::deserialize_schema(scan.schema.as_ref().expect("ScanExecNode.schema unset"));
             let ds: Arc<dyn DataSource> = match scan.file_format.as_str() {
                 "csv" => Arc::new(CsvDataSource::new(&scan.path, Some(schema), true, 1024)),
                 "parquet" => Arc::new(ParquetDataSource::new(&scan.path)),
@@ -65,10 +60,14 @@ pub fn deserialize_physical_plan(node: &pb::PhysicalPlanNode) -> Arc<dyn Physica
         }
         Some(PlanType::Projection(proj)) => {
             let input = deserialize_physical_plan(
-                proj.input.as_deref().expect("ProjectionExecNode.input unset"),
+                proj.input
+                    .as_deref()
+                    .expect("ProjectionExecNode.input unset"),
             );
             let schema = crate::deserialize_schema(
-                proj.schema.as_ref().expect("ProjectionExecNode.schema unset"),
+                proj.schema
+                    .as_ref()
+                    .expect("ProjectionExecNode.schema unset"),
             );
             let expr = proj.expr.iter().map(deserialize_physical_expr).collect();
             Arc::new(ProjectionExec::new(input, schema, expr))
@@ -77,14 +76,15 @@ pub fn deserialize_physical_plan(node: &pb::PhysicalPlanNode) -> Arc<dyn Physica
             let input = deserialize_physical_plan(
                 sel.input.as_deref().expect("SelectionExecNode.input unset"),
             );
-            let expr = deserialize_physical_expr(
-                sel.expr.as_ref().expect("SelectionExecNode.expr unset"),
-            );
+            let expr =
+                deserialize_physical_expr(sel.expr.as_ref().expect("SelectionExecNode.expr unset"));
             Arc::new(SelectionExec::new(input, expr))
         }
         Some(PlanType::HashAggregate(agg)) => {
             let input = deserialize_physical_plan(
-                agg.input.as_deref().expect("HashAggregateExecNode.input unset"),
+                agg.input
+                    .as_deref()
+                    .expect("HashAggregateExecNode.input unset"),
             );
             let group_expr = agg
                 .group_expr
@@ -97,7 +97,9 @@ pub fn deserialize_physical_plan(node: &pb::PhysicalPlanNode) -> Arc<dyn Physica
                 .map(deserialize_physical_aggr_expr)
                 .collect();
             let schema = crate::deserialize_schema(
-                agg.schema.as_ref().expect("HashAggregateExecNode.schema unset"),
+                agg.schema
+                    .as_ref()
+                    .expect("HashAggregateExecNode.schema unset"),
             );
             let mode = aggregate_mode_from_proto(agg.mode);
             Arc::new(HashAggregateExec::new_with_mode(
@@ -110,7 +112,9 @@ pub fn deserialize_physical_plan(node: &pb::PhysicalPlanNode) -> Arc<dyn Physica
         }
         Some(PlanType::ShuffleWriter(sw)) => {
             let input = deserialize_physical_plan(
-                sw.input.as_deref().expect("ShuffleWriterExecNode.input unset"),
+                sw.input
+                    .as_deref()
+                    .expect("ShuffleWriterExecNode.input unset"),
             );
             let partition_expr = sw
                 .partition_expr
@@ -127,7 +131,9 @@ pub fn deserialize_physical_plan(node: &pb::PhysicalPlanNode) -> Arc<dyn Physica
         }
         Some(PlanType::ShuffleReader(sr)) => {
             let schema = crate::deserialize_schema(
-                sr.schema.as_ref().expect("ShuffleReaderExecNode.schema unset"),
+                sr.schema
+                    .as_ref()
+                    .expect("ShuffleReaderExecNode.schema unset"),
             );
             let locations = sr
                 .shuffle_locations
@@ -141,7 +147,6 @@ pub fn deserialize_physical_plan(node: &pb::PhysicalPlanNode) -> Arc<dyn Physica
 }
 
 /// `pb::PhysicalExprNode` → `Arc<dyn Expression>`.
-/// Kotlin `fromProto(node: PhysicalExprNode): Expression`.
 pub fn deserialize_physical_expr(node: &pb::PhysicalExprNode) -> Arc<dyn Expression> {
     use pb::physical_expr_node::ExprType;
     match node.expr_type.as_ref() {
@@ -151,12 +156,10 @@ pub fn deserialize_physical_expr(node: &pb::PhysicalExprNode) -> Arc<dyn Express
         Some(ExprType::LiteralDouble(n)) => Arc::new(LiteralDoubleExpression::new(*n)),
         Some(ExprType::LiteralDate(days)) => Arc::new(LiteralDateExpression::new(*days)),
         Some(ExprType::BinaryExpr(b)) => {
-            let l = deserialize_physical_expr(
-                b.l.as_deref().expect("PhysicalBinaryExprNode.l unset"),
-            );
-            let r = deserialize_physical_expr(
-                b.r.as_deref().expect("PhysicalBinaryExprNode.r unset"),
-            );
+            let l =
+                deserialize_physical_expr(b.l.as_deref().expect("PhysicalBinaryExprNode.l unset"));
+            let r =
+                deserialize_physical_expr(b.r.as_deref().expect("PhysicalBinaryExprNode.r unset"));
             match b.op.as_str() {
                 "eq" => Arc::new(EqExpression::new(l, r)),
                 "neq" => Arc::new(NeqExpression::new(l, r)),
@@ -185,7 +188,6 @@ pub fn deserialize_physical_expr(node: &pb::PhysicalExprNode) -> Arc<dyn Express
 }
 
 /// `pb::PhysicalAggregateExprNode` → `Arc<dyn AggregateExpression>`.
-/// Kotlin `fromProtoAggr(node)`.
 pub fn deserialize_physical_aggr_expr(
     node: &pb::PhysicalAggregateExprNode,
 ) -> Arc<dyn AggregateExpression> {
@@ -211,7 +213,6 @@ pub fn deserialize_physical_aggr_expr(
 }
 
 /// `pb::ShuffleLocation` → `physical_plan::ShuffleLocation`.
-/// Kotlin `fromProto(loc: ShuffleLocation)`.
 ///
 /// Stays a free function (rather than `impl From<&pb::ShuffleLocation> for
 /// physical_plan::ShuffleLocation`) because the target type is in a foreign
@@ -227,7 +228,7 @@ pub fn deserialize_shuffle_location(loc: &pb::ShuffleLocation) -> ShuffleLocatio
     )
 }
 
-/// `pb::TaskInfo` → `Task`. Kotlin `fromProto(task: TaskInfo)`.
+/// `pb::TaskInfo` → `Task`.
 ///
 /// `Task::plan` is `Arc<dyn PhysicalPlan>`, matching what
 /// [`deserialize_physical_plan`] now returns — no conversion needed.
@@ -247,7 +248,7 @@ pub fn deserialize_task(task: &pb::TaskInfo) -> Task {
 
 /// `pb::AggregateMode` (i32) → our `AggregateMode`. Inverse of
 /// `physical_plan_serializer::aggregate_mode_to_proto`. Defaults to `Complete`
-/// for any unknown enum value (matches Kotlin's `else -> COMPLETE`).
+/// for any unknown enum value.
 fn aggregate_mode_from_proto(mode: i32) -> AggregateMode {
     match pb::AggregateMode::try_from(mode) {
         Ok(pb::AggregateMode::Complete) => AggregateMode::Complete,

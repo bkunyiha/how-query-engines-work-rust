@@ -1,39 +1,30 @@
-//! Port of `kquery/datasource/src/main/kotlin/CsvDataSource.kt`.
+//! CSV data source. Delegates to `arrow::csv::ReaderBuilder`, which handles
+//! schema inference, batch-by-batch reading, and per-type field-vector
+//! population natively and produces `RecordBatch`es directly.
 //!
-//! CSV data source. This is one of the explicit
-//! library-forced substitutions: instead of porting Andy's ~269 lines of hand-rolled
-//! univocity-parsers logic (schema inference, batch-by-batch reading, per-type
-//! field-vector setters), the Rust port delegates to `arrow::csv::ReaderBuilder`,
-//! which does all of those things natively and produces `RecordBatch`es directly.
-//!
-//! Translation notes:
-//! - Kotlin `CsvDataSource(filename, schema, hasHeaders, batchSize)` → Rust
-//!   `CsvDataSource { filename, schema, has_headers, batch_size, delimiter }`.
-//!   Added `delimiter` so the same struct can serve TSV (`\t`) — kquery had
-//!   separate test paths for `.tsv` but used the same class with univocity's
-//!   `isDelimiterDetectionEnabled`. arrow-rs requires explicit delimiter.
-//! - Kotlin `Sequence<RecordBatch>` → `Box<dyn Iterator<Item = RecordBatch>>`.
-//! - Kotlin schema inference (everything-as-String) → arrow-rs's typed inference
-//!   (picks numeric / bool / utf8 by scanning rows). This is a *behaviour*
-//!   change, but it matches the better default and produces more useful schemas.
-//! - Kotlin `Schema.select(projection)` for the projected schema → same in Rust.
-//!   arrow-rs's `with_projection` takes column *indices*, so we resolve names
-//!   to indices here before passing them in.
-//! - Errors panic (`File::open` failure, malformed CSV, etc.).
+//! ## Notes
+//! - `CsvDataSource { filename, schema, has_headers, batch_size, delimiter }`.
+//!   `delimiter` lets the same struct serve TSV (`\t`); arrow-rs requires an
+//!   explicit delimiter.
+//! - Type inference picks numeric / bool / utf8 by scanning rows, producing
+//!   more useful schemas than treating every column as a string.
+//! - `with_projection` takes column *indices*, so we resolve column names to
+//!   indices here before passing them in.
+//! - I/O and parse errors panic (`File::open` failure, malformed CSV, etc.).
 
 use crate::data_source::DataSource;
-use arrow::csv::{reader::Format, ReaderBuilder};
-use datatypes::{schema::from_arrow as schema_from_arrow, RecordBatch, Schema};
+use arrow::csv::{ReaderBuilder, reader::Format};
+use datatypes::{RecordBatch, Schema, schema::from_arrow as schema_from_arrow};
 use std::fs::File;
 use std::sync::Arc;
 
 pub struct CsvDataSource {
-    pub filename:    String,
+    pub filename: String,
     /// If `None`, the schema is inferred from the file on first access.
-    pub schema:      Option<Schema>,
+    pub schema: Option<Schema>,
     pub has_headers: bool,
-    pub batch_size:  usize,
-    pub delimiter:   u8,
+    pub batch_size: usize,
+    pub delimiter: u8,
 }
 
 impl CsvDataSource {
@@ -66,12 +57,14 @@ impl CsvDataSource {
         s
     }
 
-    /// Infer the schema by scanning the file. Kotlin's `inferSchema()` infers
-    /// everything as `String`; we use arrow-rs's typed inference (`Int64`,
-    /// `Float64`, `Boolean`, `Utf8`) which is more useful.
+    /// Infer the schema by scanning the file using arrow-rs's typed
+    /// inference (`Int64`, `Float64`, `Boolean`, `Utf8`).
     fn infer_schema(&self) -> Schema {
         let file = File::open(&self.filename).unwrap_or_else(|e| {
-            panic!("CsvDataSource::infer_schema: cannot open '{}': {}", self.filename, e)
+            panic!(
+                "CsvDataSource::infer_schema: cannot open '{}': {}",
+                self.filename, e
+            )
         });
         let format = Format::default()
             .with_header(self.has_headers)
@@ -96,7 +89,10 @@ impl DataSource for CsvDataSource {
 
     fn scan(&self, projection: &[String]) -> Box<dyn Iterator<Item = RecordBatch>> {
         let file = File::open(&self.filename).unwrap_or_else(|e| {
-            panic!("CsvDataSource::scan: cannot open '{}': {}", self.filename, e)
+            panic!(
+                "CsvDataSource::scan: cannot open '{}': {}",
+                self.filename, e
+            )
         });
 
         // Determine the schema used by the reader (typed schema, not projected).
@@ -129,15 +125,17 @@ impl DataSource for CsvDataSource {
             builder = builder.with_projection(indices);
         }
 
-        let reader = builder.build(file).unwrap_or_else(|e| {
-            panic!("CsvDataSource::scan: failed to build CSV reader: {}", e)
-        });
+        let reader = builder
+            .build(file)
+            .unwrap_or_else(|e| panic!("CsvDataSource::scan: failed to build CSV reader: {}", e));
 
         // The reader is itself an Iterator<Item = Result<RecordBatch, ArrowError>>.
         // Unwrap and panic on parse errors rather than propagating Result.
-        Box::new(reader.map(|res| {
-            res.unwrap_or_else(|e| panic!("CsvDataSource: malformed CSV batch: {}", e))
-        }))
+        Box::new(
+            reader.map(|res| {
+                res.unwrap_or_else(|e| panic!("CsvDataSource: malformed CSV batch: {}", e))
+            }),
+        )
     }
 }
 
@@ -159,7 +157,7 @@ mod tests {
         let batches: Vec<_> = csv.scan(&[]).collect();
         assert_eq!(batches.len(), 1);
         let b = &batches[0];
-        // employee.csv has 4 rows (per kquery CsvDataSourceTest).
+        // employee.csv has 4 rows.
         assert_eq!(row_count(b), 4);
         // 6 columns: id, first_name, last_name, state, job_title, salary.
         assert_eq!(b.num_columns(), 6);
@@ -168,7 +166,14 @@ mod tests {
         // temporary that drops at the semicolon).
         let schema = b.schema();
         let names: Vec<&str> = schema.fields().iter().map(|f| f.name().as_str()).collect();
-        for expected in ["id", "first_name", "last_name", "state", "job_title", "salary"] {
+        for expected in [
+            "id",
+            "first_name",
+            "last_name",
+            "state",
+            "job_title",
+            "salary",
+        ] {
             assert!(names.contains(&expected), "missing column: {}", expected);
         }
     }
@@ -200,12 +205,10 @@ mod tests {
 
     /// Note on the TSV test fixtures: `testdata/employee.tsv` is *not* actually
     /// tab-separated despite its extension — it uses two-space whitespace
-    /// alignment between columns. Kotlin's tests pass against it only because
-    /// univocity-parsers auto-detects the delimiter via heuristics
-    /// (`isDelimiterDetectionEnabled = true`). arrow-rs's CSV reader needs an
-    /// explicit delimiter and does not support multi-space "delimiters", so the
-    /// Rust port uses `testdata/employee_no_header.tsv` (which IS actually
-    /// tab-separated, hex `0x09`) for the TSV smoke test.
+    /// alignment between columns. arrow-rs's CSV reader needs an explicit
+    /// delimiter and does not support multi-space "delimiters", so this smoke
+    /// test uses `testdata/employee_no_header.tsv` (which IS actually
+    /// tab-separated, hex `0x09`).
     #[test]
     fn read_tsv_no_header() {
         // employee_no_header.tsv is real tab-separated, no header row.
@@ -220,12 +223,7 @@ mod tests {
             Field::new("field_5", STRING_TYPE),
             Field::new("field_6", STRING_TYPE),
         ]);
-        let csv = CsvDataSource::tsv(
-            fixture("employee_no_header.tsv"),
-            Some(schema),
-            false,
-            1024,
-        );
+        let csv = CsvDataSource::tsv(fixture("employee_no_header.tsv"), Some(schema), false, 1024);
         let batches: Vec<_> = csv.scan(&[]).collect();
         assert_eq!(batches.len(), 1);
         // employee_no_header.tsv has 3 rows.

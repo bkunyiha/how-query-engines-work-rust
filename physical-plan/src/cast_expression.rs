@@ -1,20 +1,16 @@
-//! Port of `kquery/physical-plan/src/main/kotlin/expressions/CastExpression.kt`.
 //!
 //! Converts the values produced by an inner expression to a target Arrow type,
-//! cell by cell. Kotlin dispatches on the target `dataType` with a `when` block,
-//! reading each source value (which may be a number, a string, or raw bytes) and
-//! converting it. The Rust port keeps the same shape, but the source value is a
-//! typed [`ScalarValue`] rather than `Any?`, so the conversions read it through a
-//! few small helpers.
+//! cell by cell. Dispatches on the target `data_type` with a `match` block,
+//! reading each source value (which may be a number, a string, or raw bytes)
+//! and converting it through a few small helpers.
 
 use crate::expressions::Expression;
 use arrow_schema::DataType;
-use datatypes::{record_batch, ArrowVectorBuilder, ColumnVector, RecordBatch, ScalarValue};
+use datatypes::{ArrowVectorBuilder, ColumnVector, RecordBatch, ScalarValue, record_batch};
 use std::fmt;
 use std::sync::Arc;
 
-/// Cast the result of `expr` to `data_type`. Kotlin
-/// `CastExpression(val expr: Expression, val dataType: ArrowType)`.
+/// Cast the result of `expr` to `data_type`.
 pub struct CastExpression {
     pub expr: Arc<dyn Expression>,
     pub data_type: DataType,
@@ -61,14 +57,13 @@ impl Expression for CastExpression {
 
 impl fmt::Display for CastExpression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Kotlin: "CAST($expr AS $dataType)". arrow-rs's `DataType` has no
-        // `Display`, so we use its `Debug` form for the type name.
+        // arrow-rs's `DataType` has no `Display`, so use its `Debug` form
+        // for the type name.
         write!(f, "CAST({} AS {:?})", self.expr, self.data_type)
     }
 }
 
-/// Convert a source value to `i64` (truncating floats, parsing strings/bytes),
-/// matching Kotlin's `Number.toLong()` / `String(bytes).toLong()` / `string.toLong()`.
+/// Convert a source value to `i64`: truncates floats, parses strings and bytes.
 fn to_i64(v: &ScalarValue) -> i64 {
     match v {
         ScalarValue::Int8(n) => *n as i64,
@@ -91,7 +86,7 @@ fn to_i64(v: &ScalarValue) -> i64 {
 }
 
 /// Convert a source value to `f32`. Strings/bytes are parsed directly to `f32`
-/// (matching Kotlin's `string.toFloat()`); numbers are widened/narrowed.
+///; numbers are widened/narrowed.
 fn to_f32(v: &ScalarValue) -> f32 {
     match v {
         ScalarValue::Utf8(s) => s.trim().parse().expect("cannot cast string to float"),
@@ -135,8 +130,7 @@ fn to_f64(v: &ScalarValue) -> f64 {
     }
 }
 
-/// Render a source value as a string. Kotlin's `vv.toString()` (with `String(bytes)`
-/// for `ByteArray`).
+/// Render a source value as a string.
 fn scalar_to_string(v: &ScalarValue) -> String {
     match v {
         ScalarValue::Boolean(b) => b.to_string(),
@@ -159,14 +153,14 @@ fn scalar_to_string(v: &ScalarValue) -> String {
 
 #[cfg(test)]
 mod tests {
-    //! Port of `kquery/physical-plan/src/test/kotlin/CastExpressionTest.kt`.
-    //! Builds the input batch directly (the Kotlin `Fuzzer` is module 9, unported).
+    //! Builds the input batch directly (the `fuzzer` crate covered in module 9
+    //! is not yet implemented).
     use super::*;
     use crate::column_expression::ColumnExpression;
     use arrow_array::{ArrayRef, Int8Array, StringArray};
     use arrow_schema::{Field as ArrowField, Schema as ArrowSchema};
-    use datatypes::arrow_types::{FLOAT_TYPE, INT8_TYPE, STRING_TYPE};
     use datatypes::RecordBatch;
+    use datatypes::arrow_types::{FLOAT_TYPE, INT8_TYPE, STRING_TYPE};
     use std::sync::Arc;
 
     fn batch1(name: &str, t: DataType, col: ArrayRef) -> RecordBatch {
@@ -183,16 +177,15 @@ mod tests {
         let result = expr.evaluate(&batch);
 
         assert_eq!(result.size(), a.len());
-        for i in 0..result.size() {
-            assert_eq!(result.get_value(i), ScalarValue::Utf8(a[i].to_string()));
+        for (i, val) in a.iter().enumerate() {
+            assert_eq!(result.get_value(i), ScalarValue::Utf8(val.to_string()));
         }
     }
 
     #[test]
     fn cast_string_to_float() {
-        // The Kotlin test uses Float.MIN_VALUE/MAX_VALUE string forms; the exact
-        // values don't matter — the test parses the same strings to compute the
-        // expected f32, so it stays self-consistent.
+        // The exact values don't matter — the test parses the same strings to
+        // compute the expected f32, so it stays self-consistent.
         let a = vec!["1.5", "2.25", "10.0"];
         let batch = batch1("a", STRING_TYPE, Arc::new(StringArray::from(a.clone())));
 
@@ -200,8 +193,8 @@ mod tests {
         let result = expr.evaluate(&batch);
 
         assert_eq!(result.size(), a.len());
-        for i in 0..result.size() {
-            let expected: f32 = a[i].parse().unwrap();
+        for (i, val) in a.iter().enumerate() {
+            let expected: f32 = val.parse().unwrap();
             assert_eq!(result.get_value(i), ScalarValue::Float32(expected));
         }
     }

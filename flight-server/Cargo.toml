@@ -1,6 +1,6 @@
 [package]
 name         = "flight-server"
-description  = "Arrow Flight server exposing the query engine over gRPC. Rust port of kquery/flight-server."
+description  = "Arrow Flight server exposing the query engine over gRPC."
 edition.workspace      = true
 license.workspace      = true
 version.workspace      = true
@@ -25,9 +25,7 @@ tokio-stream     = "0.1"
 # uses directly.
 prost            = { workspace = true }
 
-# Internal — eight siblings, matching the upstream Kotlin flight-server/build.gradle.kts
-# dependency graph. Verified against the kquery source per
-# ../ARCHITECTURE.md §1.4 (empirical findings table).
+# Internal — eight siblings.
 datatypes      = { path = "../datatypes" }
 datasource     = { path = "../datasource" }
 logical-plan   = { path = "../logical-plan" }

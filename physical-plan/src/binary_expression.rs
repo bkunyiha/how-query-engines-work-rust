@@ -1,19 +1,15 @@
-//! Port of `kquery/physical-plan/src/main/kotlin/expressions/BinaryExpression.kt`.
 //!
-//! Shared scaffolding for expressions with a left and a right operand. The Kotlin
-//! original is an `abstract class BinaryExpression(l, r)` using the *template
-//! method* pattern: the base `evaluate(input)` evaluates both sides, coerces
-//! their types if needed, and then defers to an abstract
-//! `evaluate(l: ColumnVector, r: ColumnVector)` that each concrete subclass fills
-//! in.
+//! Shared scaffolding for expressions with a left and a right operand, using the
+//! *template method* pattern: the base `evaluate_binary` evaluates both sides,
+//! coerces their types if needed, and then defers to an `evaluate_pair` method
+//! that each concrete operator implements.
 //!
-//! ## Translation note — abstract class → trait with a default method
-//! Rust has no class inheritance, so the abstract base becomes a **trait with a
-//! default method**. [`BinaryExpression`] supplies the template logic
+//! ## Trait with a default method
+//! [`BinaryExpression`] supplies the template logic
 //! ([`BinaryExpression::evaluate_binary`]) as a default method and leaves
-//! `evaluate_pair` for the concrete type to implement — exactly the open/closed
-//! split the Kotlin abstract class expressed. A concrete operator then writes a
-//! trivial `impl Expression { fn evaluate(..) { self.evaluate_binary(input) } }`
+//! `evaluate_pair` for the concrete type to implement — a clean open/closed
+//! split. A concrete operator then writes a trivial
+//! `impl Expression { fn evaluate(..) { self.evaluate_binary(input) } }`
 //! to plug the template back into the root [`Expression`] trait. (A sub-trait
 //! cannot supply a *super*-trait's required method as a default, which is why the
 //! delegate line is written out explicitly at each leaf rather than being hidden
@@ -26,7 +22,7 @@ use datatypes::{ColumnVector, RecordBatch, ScalarValue};
 use std::sync::Arc;
 
 /// A binary expression: left and right operands, with shared
-/// evaluate-both-then-coerce logic. Kotlin `abstract class BinaryExpression`.
+/// evaluate-both-then-coerce logic.
 pub trait BinaryExpression: Expression {
     /// The left operand expression.
     fn left(&self) -> &Arc<dyn Expression>;
@@ -34,12 +30,11 @@ pub trait BinaryExpression: Expression {
     fn right(&self) -> &Arc<dyn Expression>;
 
     /// Operator-specific evaluation over two already-evaluated columns.
-    /// Kotlin: the abstract `evaluate(l: ColumnVector, r: ColumnVector)`.
     fn evaluate_pair(&self, l: &dyn ColumnVector, r: &dyn ColumnVector) -> Box<dyn ColumnVector>;
 
-    /// Template method (Kotlin base-class `evaluate(input)`): evaluate both sides,
-    /// require equal lengths, coerce numeric types to a common type if they
-    /// differ, then dispatch to [`evaluate_pair`](Self::evaluate_pair).
+    /// Template method: evaluate both sides, require equal lengths, coerce
+    /// numeric types to a common type if they differ, then dispatch to
+    /// [`evaluate_pair`](Self::evaluate_pair).
     fn evaluate_binary(&self, input: &RecordBatch) -> Box<dyn ColumnVector> {
         let ll = self.left().evaluate(input);
         let rr = self.right().evaluate(input);
@@ -56,7 +51,7 @@ pub trait BinaryExpression: Expression {
 }
 
 /// If both operands are numeric, coerce each to `Float64`; otherwise this is an
-/// error, matching Kotlin's `IllegalStateException`.
+/// error.
 fn coerce_types(
     ll: Box<dyn ColumnVector>,
     rr: Box<dyn ColumnVector>,
@@ -71,7 +66,6 @@ fn coerce_types(
     );
 }
 
-/// Kotlin `isNumeric`: integer, floating-point, or decimal Arrow types.
 fn is_numeric(t: &DataType) -> bool {
     matches!(
         t,
@@ -92,7 +86,7 @@ fn is_numeric(t: &DataType) -> bool {
 }
 
 /// Already `Float64`? Pass it through. Otherwise wrap in a [`CoercedDoubleVector`]
-/// that converts on access. Kotlin `coerceToDouble`.
+/// that converts on access.
 fn coerce_to_double(col: Box<dyn ColumnVector>) -> Box<dyn ColumnVector> {
     if col.get_type() == DataType::Float64 {
         col
@@ -101,9 +95,8 @@ fn coerce_to_double(col: Box<dyn ColumnVector>) -> Box<dyn ColumnVector> {
     }
 }
 
-/// A column vector that coerces every value to `f64` on access. Kotlin's private
-/// `CoercedDoubleVector`. It does not own arrow memory — it forwards to `inner` —
-/// so there is nothing to release on drop.
+/// A column vector that coerces every value to `f64` on access. It does not own
+/// arrow memory — it forwards to `inner` — so there is nothing to release on drop.
 struct CoercedDoubleVector {
     inner: Box<dyn ColumnVector>,
 }

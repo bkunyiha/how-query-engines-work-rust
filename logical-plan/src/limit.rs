@@ -1,4 +1,3 @@
-//! Port of `kquery/logical-plan/src/main/kotlin/Limit.kt`.
 //!
 //! Logical plan representing a limit. Does not change the input schema.
 
@@ -14,7 +13,10 @@ pub struct Limit {
 
 impl Limit {
     pub fn new(input: LogicalPlan, limit: i32) -> Self {
-        Self { input: Box::new(input), limit }
+        Self {
+            input: Box::new(input),
+            limit,
+        }
     }
 
     pub fn schema(&self) -> Schema {

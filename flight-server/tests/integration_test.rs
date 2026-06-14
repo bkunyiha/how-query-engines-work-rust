@@ -29,13 +29,15 @@ use datatypes::RecordBatch;
 use flight_server::r_query_flight_producer::RQueryFlightProducer;
 use futures::StreamExt;
 use logical_plan::{LogicalPlan, Scan};
-use physical_plan::{ColumnExpression, ExecutorContext, PhysicalPlan, ScanExec, ShuffleWriterExec, Task};
+use physical_plan::{
+    ColumnExpression, ExecutorContext, PhysicalPlan, ScanExec, ShuffleWriterExec, Task,
+};
 use protobuf::{pb, serialize_logical_plan, serialize_task};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
-use tonic::transport::{Channel, Server};
 use tonic::Request;
+use tonic::transport::{Channel, Server};
 
 const EMPLOYEE_CSV: &str = "../testdata/employee.csv";
 
@@ -53,7 +55,10 @@ fn temp_dir(tag: &str) -> String {
 /// it at the end).
 async fn spawn_flight_server(
     ctx: ExecutorContext,
-) -> (std::net::SocketAddr, tokio::task::JoinHandle<Result<(), tonic::transport::Error>>) {
+) -> (
+    std::net::SocketAddr,
+    tokio::task::JoinHandle<Result<(), tonic::transport::Error>>,
+) {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind random port");
@@ -82,16 +87,13 @@ async fn connect_client(addr: std::net::SocketAddr) -> FlightServiceClient<Chann
 }
 
 fn build_employee_scan_plan() -> LogicalPlan {
-    let ds: Arc<dyn DataSource> =
-        Arc::new(CsvDataSource::new(EMPLOYEE_CSV, None, true, 1024));
+    let ds: Arc<dyn DataSource> = Arc::new(CsvDataSource::new(EMPLOYEE_CSV, None, true, 1024));
     LogicalPlan::Scan(Scan::new(EMPLOYEE_CSV, ds, vec![]))
 }
 
 fn build_shuffle_writer_task() -> Task {
-    let ds: Arc<dyn DataSource> =
-        Arc::new(CsvDataSource::new(EMPLOYEE_CSV, None, true, 1024));
-    let columns: Vec<String> =
-        ds.schema().fields.iter().map(|f| f.name.clone()).collect();
+    let ds: Arc<dyn DataSource> = Arc::new(CsvDataSource::new(EMPLOYEE_CSV, None, true, 1024));
+    let columns: Vec<String> = ds.schema().fields.iter().map(|f| f.name.clone()).collect();
     let scan: Arc<dyn PhysicalPlan> = Arc::new(ScanExec::new(Arc::clone(&ds), columns));
     let writer: Arc<dyn PhysicalPlan> = Arc::new(ShuffleWriterExec::new(
         scan,
@@ -139,8 +141,8 @@ async fn integration_do_action_execute_task() {
         .expect("at least one result expected");
 
     // Decode the result body as TaskResult.
-    let task_result: pb::TaskResult = prost::Message::decode(result.body.as_ref())
-        .expect("body should decode as TaskResult");
+    let task_result: pb::TaskResult =
+        prost::Message::decode(result.body.as_ref()).expect("body should decode as TaskResult");
 
     assert_eq!(task_result.job_uuid, "test-job-integration");
     assert_eq!(task_result.stage_id, 0);
@@ -192,9 +194,9 @@ async fn integration_do_get_streams_record_batches() {
     // back into RecordBatches. The stream from `client.do_get` is
     // `Streaming<FlightData>` — convert to a Stream<Item = Result<FlightData, FlightError>>
     // first.
-    let flight_data_stream = response.into_inner().map(|r| {
-        r.map_err(|status| arrow_flight::error::FlightError::Tonic(Box::new(status)))
-    });
+    let flight_data_stream = response
+        .into_inner()
+        .map(|r| r.map_err(|status| arrow_flight::error::FlightError::Tonic(Box::new(status))));
     let mut record_batch_stream = FlightRecordBatchStream::new_from_flight_data(flight_data_stream);
 
     let mut batches: Vec<RecordBatch> = Vec::new();
@@ -208,8 +210,7 @@ async fn integration_do_get_streams_record_batches() {
 
     // All batches share the same schema (the scan's output schema). At minimum,
     // every batch's column count matches the input.
-    let ds: Arc<dyn DataSource> =
-        Arc::new(CsvDataSource::new(EMPLOYEE_CSV, None, true, 1024));
+    let ds: Arc<dyn DataSource> = Arc::new(CsvDataSource::new(EMPLOYEE_CSV, None, true, 1024));
     let expected_columns = ds.schema().fields.len();
     for b in &batches {
         assert_eq!(b.num_columns(), expected_columns);
@@ -231,11 +232,9 @@ async fn integration_unknown_action_returns_invalid_argument() {
         body: Vec::new().into(),
     };
 
-    let status = client
-        .do_action(Request::new(action))
-        .await
-        .err()
-        .expect("unknown action must return Err");
+    let Err(status) = client.do_action(Request::new(action)).await else {
+        panic!("unknown action must return Err");
+    };
     assert_eq!(status.code(), tonic::Code::InvalidArgument);
     assert!(
         status.message().contains("nope_not_real"),

@@ -1,4 +1,3 @@
-//! Port of `kquery/physical-plan/src/main/kotlin/expressions/AvgExpression.kt`.
 //!
 //! `AVG(expr)` — mean of non-null values, returned as `Float64`. Unlike the other
 //! aggregates, AVG's *intermediate* state is compound (a running sum **and** a
@@ -7,12 +6,12 @@
 //! [`AccumulatorValue::AvgState`] rather than a scalar.
 
 use crate::aggregate_expression::AggregateExpression;
-use crate::expressions::{number_to_f64, Accumulator, AccumulatorValue, Expression};
+use crate::expressions::{Accumulator, AccumulatorValue, Expression, number_to_f64};
 use datatypes::ScalarValue;
 use std::fmt;
 use std::sync::Arc;
 
-/// `AVG(expr)`. Kotlin `AvgExpression`.
+/// `AVG(expr)`.
 pub struct AvgExpression {
     expr: Arc<dyn Expression>,
 }
@@ -41,7 +40,7 @@ impl fmt::Display for AvgExpression {
     }
 }
 
-/// Tracks running `sum` and `count`. Kotlin `AvgAccumulator`.
+/// Tracks running `sum` and `count`.
 pub struct AvgAccumulator {
     sum: f64,
     count: i32,
@@ -68,7 +67,7 @@ impl Accumulator for AvgAccumulator {
     }
 
     fn final_value(&self) -> ScalarValue {
-        // Kotlin: `if (count == 0) null else sum / count`.
+        // Empty group: null. Otherwise: sum / count.
         if self.count == 0 {
             ScalarValue::Null
         } else {
@@ -77,9 +76,8 @@ impl Accumulator for AvgAccumulator {
     }
 
     fn intermediate_value(&self) -> AccumulatorValue {
-        // Kotlin: `if (count == 0) null else AvgIntermediateState(sum, count)`.
-        // `AccumulatorValue` has no null; an empty group is represented as a null
-        // scalar (the same observable "no partial state" as Kotlin's null).
+        // `AccumulatorValue` has no null variant; an empty group is represented
+        // as a null scalar — the same observable "no partial state".
         if self.count == 0 {
             AccumulatorValue::Scalar(ScalarValue::Null)
         } else {
@@ -91,7 +89,7 @@ impl Accumulator for AvgAccumulator {
     }
 
     fn merge(&mut self, other: &AccumulatorValue) {
-        // Kotlin: merge sum and count separately from an AvgIntermediateState.
+        // Merge sum and count separately from an `AvgState`.
         match other {
             AccumulatorValue::AvgState { sum, count } => {
                 self.sum += sum;

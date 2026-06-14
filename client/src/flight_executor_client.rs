@@ -11,7 +11,7 @@
 //! |--------------|-----------|---------------------|
 //! | `execute_task(executor, task)` | `do_action("execute_task", TaskInfo)` → `TaskResult` | `r_query_flight_producer.rs::do_action` matches `ShuffleWriterExec`, calls `write_shuffle(&ctx)`, returns shuffle locations |
 //! | `execute_final_task(executor, task)` | `do_get(Action { task: Some(TaskInfo) })` → `FlightData` stream | `do_get` deserialises the Task, runs `task.plan.execute(&self.ctx)`, streams batches |
-//! | `fetch_shuffle(executor, location)` | Stub — Phase 2 | Phase 2 |
+//! | `fetch_shuffle(executor, location)` | not implemented | not implemented |
 //!
 //! `execute_final_task` *works* because `PhysicalPlan::execute` takes
 //! `&ExecutorContext` as a trait-method parameter, so
@@ -23,24 +23,22 @@
 //!
 //! ## What it doesn't do
 //!
-//! `fetch_shuffle` is stubbed. It would be called by a `ShuffleReaderExec`
-//! that needs to read shuffle data from a different executor. Today our
-//! integration tests use a single executor for all stages so all reads are
-//! local — the stub returns an empty iterator. Phase 2 wires a Flight
-//! client into [`ExecutorContext`] and `ShuffleReaderExec` uses it for
-//! remote reads, which is when `fetch_shuffle` actually gets called.
+//! `fetch_shuffle` is not implemented. It would be called by a
+//! `ShuffleReaderExec` that needs to read shuffle data from a different
+//! executor. The current integration tests use a single executor for all
+//! stages so all reads are local — `fetch_shuffle` returns an empty
+//! iterator. Wiring a Flight client into [`ExecutorContext`] so
+//! `ShuffleReaderExec` can call this for remote partitions is the next
+//! step toward multi-executor distributed queries.
 //!
-//! ## kquery comparison
+//! ## How the trait shape supports this
 //!
-//! kquery has no equivalent — its `distributed/Scheduler.kt` declares the
-//! `ExecutorClient` interface but ships no real implementation. The
-//! `DistributedExample.kt` includes a `LocalExecutorClient` that
-//! demonstrates the API surface but is non-functional for any query that
-//! involves shuffle (its `executeFinalTask` calls `task.plan.execute()`
-//! which throws on `ShuffleReaderExec`). rquery's trait refactor closes
-//! both gaps — `PhysicalPlan::execute` takes `&ExecutorContext` so context-aware
-//! execution is the trait shape itself, and `FlightExecutorClient` is the
-//! real `impl ExecutorClient` that drives a distributed query end-to-end.
+//! Because `PhysicalPlan::execute` takes `&ExecutorContext` as a trait-method
+//! parameter, context-aware execution is the trait shape itself. There is no
+//! need for a special-case plan-tree rewrite: the context flows naturally
+//! through any operator that wraps a `ShuffleReaderExec`. `FlightExecutorClient`
+//! is the real `impl ExecutorClient` that drives a distributed query
+//! end-to-end.
 
 use crate::client::Client;
 use crate::endpoint::Endpoint;
@@ -103,11 +101,7 @@ impl ExecutorClient for FlightExecutorClient {
     /// Ship a `ShuffleWriterExec` task to the executor via
     /// `do_action("execute_task", ...)`. Decodes the returned
     /// `pb::TaskResult` into a `Vec<ShuffleLocation>`.
-    fn execute_task(
-        &self,
-        executor: &ExecutorConfig,
-        task: Task,
-    ) -> Vec<ShuffleLocation> {
+    fn execute_task(&self, executor: &ExecutorConfig, task: Task) -> Vec<ShuffleLocation> {
         // Encode the physical task into the protobuf payload expected by Flight.
         let task_info: pb::TaskInfo = serialize_task(&task);
         let body: Vec<u8> = prost::Message::encode_to_vec(&task_info);
@@ -182,21 +176,22 @@ impl ExecutorClient for FlightExecutorClient {
         Box::new(batches.into_iter())
     }
 
-    /// Fetch one shuffle partition's data from a remote executor. Phase 2
-    /// stub — see module doc. Returns an empty iterator today; the
+    /// Fetch one shuffle partition's data from a remote executor.
+    ///
+    /// Not implemented. Returns an empty iterator. The current
     /// integration test path uses a single in-process executor so all
     /// shuffle reads are local (handled inside `ShuffleReaderExec::execute`
-    /// via `ctx.shuffle_manager`).
+    /// via `ctx.shuffle_manager`). Implementing this requires wiring a
+    /// Flight client into `ExecutorContext` so the reader can fetch
+    /// partitions from other executors over gRPC.
     fn fetch_shuffle(
         &self,
         _executor: &ExecutorConfig,
         _location: &ShuffleLocation,
     ) -> Box<dyn Iterator<Item = RecordBatch>> {
-        // Remote shuffle fetching is not wired yet; local reads happen server-side.
-        debug!(
-            "fetch_shuffle: stub (Phase 2 will wire Flight client into ExecutorContext)"
-        );
+        // Cross-executor shuffle reads are not implemented; the single-executor
+        // case is handled directly inside the server's ShuffleReaderExec.
+        debug!("fetch_shuffle: not implemented (cross-executor reads not supported)");
         Box::new(std::iter::empty())
     }
 }
-

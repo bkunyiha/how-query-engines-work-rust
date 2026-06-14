@@ -1,4 +1,3 @@
-//! Port of `kquery/logical-plan/src/main/kotlin/Aggregate.kt`.
 //!
 //! Logical plan representing an aggregate query against an input. Its schema is
 //! the group expressions followed by the aggregate expressions.
@@ -14,7 +13,7 @@ pub struct Aggregate {
     pub input: Box<LogicalPlan>,
     pub group_expr: Vec<LogicalExpr>,
     /// The aggregate expressions, typed as the narrow `AggregateExpr` family
-    /// (Kotlin `List<AggregateExpr>`). Aggregates bridge into `LogicalExpr` only
+    ///. Aggregates bridge into `LogicalExpr` only
     /// when they need to nest inside another expression (see `expressions.rs`).
     pub aggregate_expr: Vec<AggregateExpr>,
 }
@@ -25,12 +24,19 @@ impl Aggregate {
         group_expr: Vec<LogicalExpr>,
         aggregate_expr: Vec<AggregateExpr>,
     ) -> Self {
-        Self { input: Box::new(input), group_expr, aggregate_expr }
+        Self {
+            input: Box::new(input),
+            group_expr,
+            aggregate_expr,
+        }
     }
 
     pub fn schema(&self) -> Schema {
-        let mut fields: Vec<Field> =
-            self.group_expr.iter().map(|e| e.to_field(&self.input)).collect();
+        let mut fields: Vec<Field> = self
+            .group_expr
+            .iter()
+            .map(|e| e.to_field(&self.input))
+            .collect();
         fields.extend(self.aggregate_expr.iter().map(|e| e.to_field(&self.input)));
         Schema::new(fields)
     }

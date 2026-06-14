@@ -1,29 +1,27 @@
-//! Port of `kquery/protobuf/src/main/kotlin/ProtobufDeserializer.kt`.
-//!
 //! `pb::LogicalPlanNode` → `LogicalPlan`, `pb::LogicalExprNode` → `LogicalExpr`,
 //! plus the action/schema/field helpers. Inverse of
 //! [`crate::protobuf_serializer`].
 //!
 //! ## Shape — free functions, no `Deserializer` struct
-//! Same shape as the serializer side (see `protobuf_serializer.rs` module doc):
-//! no stateful struct, just free `deserialize_X` functions per DataFusion's
-//! `datafusion-proto` convention. Each non-trivial conversion is a function
-//! whose name includes the type being produced (`deserialize_logical_plan` vs
-//! `deserialize_logical_expr` vs `deserialize_schema`).
+//! Same shape as the serializer side (see `protobuf_serializer.rs` module
+//! doc): no stateful struct, just free `deserialize_X` functions per
+//! DataFusion's `datafusion-proto` convention. Each non-trivial conversion
+//! is a function whose name includes the type being produced
+//! (`deserialize_logical_plan` vs `deserialize_logical_expr` vs
+//! `deserialize_schema`).
 //!
-//! ## Translation notes
-//! - Kotlin's `if (node.hasCsvScan())…else if (node.hasSelection())…` chain
-//!   becomes a chain of `if let Some(_) = &node.<field>` arms. prost emits each
-//!   message-typed plan field as `Option<T>`, so "has-X" is `node.x.is_some()`.
+//! ## Notes
+//! - Each `pb::LogicalPlanNode` variant is dispatched via a chain of
+//!   `if let Some(_) = &node.<field>` arms. prost emits each message-typed
+//!   plan field as `Option<T>`, so the "is this variant set?" check is
+//!   `node.x.is_some()`.
 //! - `LiteralInt8/16/32/64` and `LiteralUint8/16/32/64` all collapse into
-//!   `LogicalExpr::LiteralLong(i64)` — matches Kotlin's
-//!   `lit(node.literalInt8.toLong())` etc. and is what `lit_long` is for.
-//! - The new `literal_date` arm (added by the Rust port; see
-//!   `protobuf_serializer.rs` translation notes) reverses the days-since-epoch
-//!   encoding back into a `chrono::NaiveDate`.
-//! - `IsNull` / `IsNotNull` / `Not` arms are `TODO`s in Kotlin (the logical-plan
-//!   variants don't exist there yet); the Rust port mirrors this — they `panic!`
-//!   with a clear message rather than guess at semantics.
+//!   `LogicalExpr::LiteralLong(i64)` — that's what `lit_long` is for.
+//! - The `literal_date` arm reverses the days-since-epoch encoding back
+//!   into a `chrono::NaiveDate`.
+//! - `IsNull` / `IsNotNull` / `Not` arms are unimplemented; their logical-plan
+//!   variants don't exist yet, so the arms `panic!` with a clear message
+//!   rather than guess at semantics.
 
 use crate::pb;
 use datasource::{CsvDataSource, ParquetDataSource};
@@ -31,22 +29,18 @@ use datatypes::{Field, Schema, arrow_types};
 use logical_plan::{
     Aggregate, AggregateExpr, Limit, LogicalExpr, LogicalPlan, Projection, Scan, Selection,
 };
-// Kotlin's deserializer also has no `hasJoin()` arm — JoinNode is not
-// deserialised here. If/when that's added, re-import `JoinType`.
+// JoinNode is not deserialised here. If/when that's added, re-import `JoinType`.
 use physical_plan::{Action, QueryAction};
 use std::sync::Arc;
 
 use arrow_schema::DataType;
 
-/// `pb::LogicalPlanNode` → `LogicalPlan`. Kotlin `fromProto(node: LogicalPlanNode)`.
+/// `pb::LogicalPlanNode` → `LogicalPlan`.
 pub fn deserialize_logical_plan(node: &pb::LogicalPlanNode) -> LogicalPlan {
     if let Some(csv) = &node.csv_scan {
-        // The schema field is set by the serializer only for Parquet (the
-        // Kotlin serializer drops the schema for CSV too, just like ours),
-        // so we pass `None` and let CsvDataSource re-infer from the file.
-        // Matches Kotlin's effective behaviour (the proto schema there is
-        // also unset, so its `fromProto(emptySchema)` returns an empty
-        // `Schema` that the CsvDataSource then ignores via re-inference).
+        // The schema field is set by the serializer only for Parquet — for
+        // CSV the proto schema is left unset, so we pass `None` and let
+        // `CsvDataSource` re-infer from the file.
         let ds = CsvDataSource::new(&csv.path, None, csv.has_header, 1024);
         LogicalPlan::Scan(Scan::new(
             &csv.path,
@@ -69,9 +63,7 @@ pub fn deserialize_logical_plan(node: &pb::LogicalPlanNode) -> LogicalPlan {
         ))
     } else if let Some(sel) = &node.selection {
         let input = deserialize_plan_input(node);
-        let expr = deserialize_logical_expr(
-            sel.expr.as_ref().expect("SelectionNode.expr unset"),
-        );
+        let expr = deserialize_logical_expr(sel.expr.as_ref().expect("SelectionNode.expr unset"));
         LogicalPlan::Selection(Selection::new(input, expr))
     } else if let Some(proj) = &node.projection {
         let input = deserialize_plan_input(node);
@@ -82,8 +74,11 @@ pub fn deserialize_logical_plan(node: &pb::LogicalPlanNode) -> LogicalPlan {
         LogicalPlan::Limit(Limit::new(input, lim.limit as i32))
     } else if let Some(agg) = &node.aggregate {
         let input = deserialize_plan_input(node);
-        let group_expr =
-            agg.group_expr.iter().map(deserialize_logical_expr).collect();
+        let group_expr = agg
+            .group_expr
+            .iter()
+            .map(deserialize_logical_expr)
+            .collect();
         // Each `aggr_expr` is a LogicalExprNode whose oneof is the
         // AggregateExpr variant; deserialise then unwrap the
         // `LogicalExpr::AggregateExpr(Box<AggregateExpr>)` wrapper.
@@ -116,13 +111,13 @@ fn deserialize_plan_input(node: &pb::LogicalPlanNode) -> LogicalPlan {
     deserialize_logical_plan(inner)
 }
 
-/// `pb::LogicalExprNode` → `LogicalExpr`. Kotlin `fromProto(node: LogicalExprNode)`.
+/// `pb::LogicalExprNode` → `LogicalExpr`.
 pub fn deserialize_logical_expr(node: &pb::LogicalExprNode) -> LogicalExpr {
     use pb::logical_expr_node::ExprType;
     match node.expr_type.as_ref() {
         Some(ExprType::ColumnName(name)) => LogicalExpr::Column(name.clone()),
         Some(ExprType::LiteralString(s)) => LogicalExpr::LiteralString(s.clone()),
-        // Per Kotlin: all integer literals collapse into `LiteralLong(i64)`.
+        // All integer literals collapse into `LiteralLong(i64)`.
         Some(ExprType::LiteralInt8(n)) => LogicalExpr::LiteralLong(*n as i64),
         Some(ExprType::LiteralInt16(n)) => LogicalExpr::LiteralLong(*n as i64),
         Some(ExprType::LiteralInt32(n)) => LogicalExpr::LiteralLong(*n as i64),
@@ -136,10 +131,11 @@ pub fn deserialize_logical_expr(node: &pb::LogicalExprNode) -> LogicalExpr {
         // Added by the Rust port; reverses the days-since-epoch encoding.
         Some(ExprType::LiteralDate(days)) => LogicalExpr::LiteralDate(naive_date_from_days(*days)),
         Some(ExprType::Alias(a)) => {
-            let expr = deserialize_logical_expr(
-                a.expr.as_deref().expect("AliasNode.expr unset"),
-            );
-            LogicalExpr::Alias { expr: Box::new(expr), alias: a.alias.clone() }
+            let expr = deserialize_logical_expr(a.expr.as_deref().expect("AliasNode.expr unset"));
+            LogicalExpr::Alias {
+                expr: Box::new(expr),
+                alias: a.alias.clone(),
+            }
         }
         Some(ExprType::BinaryExpr(b)) => {
             let l = Box::new(deserialize_logical_expr(
@@ -165,16 +161,11 @@ pub fn deserialize_logical_expr(node: &pb::LogicalExprNode) -> LogicalExpr {
             }
         }
         Some(ExprType::AggregateExpr(a)) => {
-            let inner = deserialize_logical_expr(
-                a.expr.as_deref().expect("AggregateExprNode.expr unset"),
-            );
-            let fn_kind =
-                pb::AggregateFunction::try_from(a.aggr_function).unwrap_or_else(|_| {
-                    panic!(
-                        "Unknown AggregateFunction enum value: {}",
-                        a.aggr_function
-                    )
-                });
+            let inner =
+                deserialize_logical_expr(a.expr.as_deref().expect("AggregateExprNode.expr unset"));
+            let fn_kind = pb::AggregateFunction::try_from(a.aggr_function).unwrap_or_else(|_| {
+                panic!("Unknown AggregateFunction enum value: {}", a.aggr_function)
+            });
             let agg = match fn_kind {
                 pb::AggregateFunction::Min => AggregateExpr::Min(inner),
                 pb::AggregateFunction::Max => AggregateExpr::Max(inner),
@@ -185,8 +176,7 @@ pub fn deserialize_logical_expr(node: &pb::LogicalExprNode) -> LogicalExpr {
             };
             LogicalExpr::AggregateExpr(Box::new(agg))
         }
-        // Kotlin TODOs these — the underlying logical-plan variants don't
-        // exist (yet). Same panic shape, same gap.
+        // The underlying logical-plan variants don't exist yet.
         Some(ExprType::IsNullExpr(_)) => {
             todo!("IsNull is not yet implemented in logical-plan")
         }
@@ -196,25 +186,22 @@ pub fn deserialize_logical_expr(node: &pb::LogicalExprNode) -> LogicalExpr {
         Some(ExprType::NotExpr(_)) => {
             todo!("Not is not yet implemented as a logical expression")
         }
-        None => panic!(
-            "Found null expr enum when deserialising protobuf logical expression"
-        ),
+        None => panic!("Found null expr enum when deserialising protobuf logical expression"),
     }
 }
 
-/// `pb::Schema` → `datatypes::Schema`. Kotlin `fromProto(schema: Schema)`.
+/// `pb::Schema` → `datatypes::Schema`.
 pub fn deserialize_schema(schema: &pb::Schema) -> Schema {
     let fields = schema.columns.iter().map(deserialize_field).collect();
     Schema::new(fields)
 }
 
-/// `pb::Field` → `datatypes::Field`. Kotlin `fromProto(field: Field)`.
+/// `pb::Field` → `datatypes::Field`.
 pub fn deserialize_field(field: &pb::Field) -> Field {
     Field::new(&field.name, from_proto_arrow_type(field.arrow_type))
 }
 
 /// `pb::Action` → `Box<dyn Action>` (wrapping a `QueryAction`).
-/// Kotlin `fromProto(action: Action)`.
 pub fn deserialize_action(action: &pb::Action) -> Box<dyn Action> {
     if let Some(query) = action.query.as_ref() {
         Box::new(QueryAction::new(deserialize_logical_plan(query)))
@@ -223,9 +210,8 @@ pub fn deserialize_action(action: &pb::Action) -> Box<dyn Action> {
     }
 }
 
-/// `pb::ArrowType` (i32) → `arrow_schema::DataType`. Mirrors Kotlin's
-/// `fromProtoArrowType`. Panics on enum values the engine does not yet support
-/// (matches Kotlin's `IllegalStateException`).
+/// `pb::ArrowType` (i32) → `arrow_schema::DataType`. Panics on enum values
+/// the engine does not yet support.
 fn from_proto_arrow_type(arrow_type: i32) -> DataType {
     let at = pb::ArrowType::try_from(arrow_type).unwrap_or_else(|_| {
         panic!("Cannot deserialize Arrow data type enum from protobuf: {arrow_type}")
@@ -251,7 +237,6 @@ fn from_proto_arrow_type(arrow_type: i32) -> DataType {
 /// Days-since-Unix-epoch → `chrono::NaiveDate`. Inverse of the helper in
 /// `protobuf_serializer.rs`; same shape as `query_planner::days_since_unix_epoch`.
 fn naive_date_from_days(days: i32) -> chrono::NaiveDate {
-    let epoch = chrono::NaiveDate::from_ymd_opt(1970, 1, 1)
-        .expect("1970-01-01 is a valid date");
+    let epoch = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).expect("1970-01-01 is a valid date");
     epoch + chrono::Duration::days(days as i64)
 }

@@ -1,4 +1,3 @@
-//! Port of `kquery/examples/src/main/kotlin/ParallelExecutionExample.kt`.
 //!
 //! Runs the same `SELECT state, SUM(CAST(salary AS double)) FROM employee
 //! GROUP BY state` query two ways — through a sequential `ExecutionContext`
@@ -67,7 +66,6 @@ fn main() {
 }
 
 /// Print every `(state, sum)` row in the result batches.
-/// Mirrors Kotlin's `printResults`.
 fn print_results(batches: &[RecordBatch]) {
     for batch in batches {
         // Wrap each column once with ArrowFieldVector so we can use the
@@ -82,10 +80,10 @@ fn print_results(batches: &[RecordBatch]) {
     }
 }
 
-/// Collect `(state, sum)` pairs into a `HashMap` for set-equality comparison
-/// — the aggregate's row order is non-deterministic (HashMap-driven), so the
-/// only sensible equality is "same set of `(key, value)` pairs."
-/// Mirrors Kotlin's `extractResults`.
+/// Collect `(state, sum)` pairs into a `HashMap` for set-equality
+/// comparison — the aggregate's row order is non-deterministic
+/// (HashMap-driven), so the only sensible equality is "same set of
+/// `(key, value)` pairs."
 fn extract_results(batches: &[RecordBatch]) -> HashMap<String, ScalarValue> {
     let mut out = HashMap::new();
     for batch in batches {
@@ -100,10 +98,9 @@ fn extract_results(batches: &[RecordBatch]) -> HashMap<String, ScalarValue> {
     out
 }
 
-/// Stringify a `ScalarValue` for use as a `HashMap` key. Mirrors Kotlin's
-/// `when (key) { is ByteArray -> String(key); else -> key.toString() }` —
-/// `Utf8` borrows its `String`, `Binary` decodes the bytes, `Null` renders
-/// as the literal `"null"` (matches `to_csv`'s null rendering).
+/// Stringify a `ScalarValue` for use as a `HashMap` key. `Utf8` borrows
+/// its `String`, `Binary` decodes the bytes, `Null` renders as the literal
+/// `"null"` (matches `to_csv`'s null rendering).
 fn scalar_to_string(v: &ScalarValue) -> String {
     match v {
         ScalarValue::Utf8(s) => s.clone(),

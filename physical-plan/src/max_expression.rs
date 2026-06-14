@@ -1,14 +1,13 @@
-//! Port of `kquery/physical-plan/src/main/kotlin/expressions/MaxExpression.kt`.
 //!
 //! `MAX(expr)` — keeps the largest non-null value seen.
 
-use crate::aggregate_expression::{scalar_gt, AggregateExpression};
+use crate::aggregate_expression::{AggregateExpression, scalar_gt};
 use crate::expressions::{Accumulator, AccumulatorValue, Expression};
 use datatypes::ScalarValue;
 use std::fmt;
 use std::sync::Arc;
 
-/// `MAX(expr)`. Kotlin `MaxExpression`.
+/// `MAX(expr)`.
 pub struct MaxExpression {
     expr: Arc<dyn Expression>,
 }
@@ -37,7 +36,7 @@ impl fmt::Display for MaxExpression {
     }
 }
 
-/// Keeps the running maximum. Kotlin `MaxAccumulator`.
+/// Keeps the running maximum.
 pub struct MaxAccumulator {
     value: ScalarValue,
 }
@@ -71,7 +70,7 @@ impl Accumulator for MaxAccumulator {
     }
 
     fn merge(&mut self, other: &AccumulatorValue) {
-        // Kotlin: "merge is the same as accumulate" for MAX.
+        // For MAX, merging a partial state is the same as accumulating it.
         if let AccumulatorValue::Scalar(v) = other {
             self.accumulate(v);
         }

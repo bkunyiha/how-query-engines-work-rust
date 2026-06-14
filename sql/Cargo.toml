@@ -1,6 +1,6 @@
 [package]
 name         = "sql"
-description  = "Hand-ported Pratt parser, tokeniser, and SQL→LogicalPlan compiler. Rust port of kquery/sql."
+description  = "Hand-written Pratt parser, tokenizer, and SQL→LogicalPlan compiler."
 edition.workspace      = true
 license.workspace      = true
 version.workspace      = true
@@ -10,12 +10,13 @@ rust-version.workspace = true
 [dependencies]
 arrow-schema = { workspace = true }
 chrono       = { workspace = true }      # NaiveDate::parse for SqlExpr::Date literal lowering
+
 datatypes    = { path = "../datatypes" }
 logical-plan = { path = "../logical-plan" }
 
-# Per Plan §3.6: do NOT swap in sqlparser-rs. The Pratt parser is the pedagogical
-# core of this module. sqlparser-rs is reserved for Phase 2 (`fdapquery`).
+# The hand-rolled Pratt parser is the pedagogical core of this module — do
+# not replace it with `sqlparser-rs` or another third-party parser.
 
 [dev-dependencies]
-# Used only by SqlPlannerTest, which builds a Scan over a CsvDataSource.
+# Used only by the SQL-planner test, which builds a Scan over a CsvDataSource.
 datasource = { path = "../datasource" }

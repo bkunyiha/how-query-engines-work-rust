@@ -1,20 +1,16 @@
-//! `ScalarValue` — typed enum that replaces Kotlin's `Any?` return type for
-//! single-cell column lookups.
+//! `ScalarValue` — typed enum representing a single cell's value.
 //!
-//! **This file has no direct Kotlin counterpart.** It applies the rule that
-//! "`Any` becomes a typed `ScalarValue` enum". The Kotlin `ColumnVector.getValue(i: Int): Any?` returns any
-//! nullable object using the JVM's runtime type system. Rust has no `Any`-style
-//! type-erased return that the compiler can exhaustively match against, so
-//! the faithful port introduces this enum as the *single* place where the
-//! port adds structure that wasn't in the Kotlin original. Every variant
+//! `ColumnVector::get_value(i)` returns a `ScalarValue`. Every variant
 //! corresponds to one of the `DataType`s listed in [`crate::arrow_types`].
+//! A typed enum (rather than a type-erased `Box<dyn Any>`) lets the compiler
+//! check that every variant is handled in a `match`.
 
 use arrow_schema::DataType;
 
 /// A single column value with its type known at compile time.
 ///
 /// Variants cover every type listed in [`crate::arrow_types`]. `Null` represents
-/// the Arrow "value is null" case (equivalent to Kotlin's `null` return).
+/// the Arrow "value is null" case.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ScalarValue {
     Null,
@@ -40,25 +36,25 @@ impl ScalarValue {
     pub fn data_type(&self) -> DataType {
         use ScalarValue::*;
         match self {
-            Null      => DataType::Null,
+            Null => DataType::Null,
             Boolean(_) => DataType::Boolean,
-            Int8(_)   => DataType::Int8,
-            Int16(_)  => DataType::Int16,
-            Int32(_)  => DataType::Int32,
-            Int64(_)  => DataType::Int64,
-            UInt8(_)  => DataType::UInt8,
+            Int8(_) => DataType::Int8,
+            Int16(_) => DataType::Int16,
+            Int32(_) => DataType::Int32,
+            Int64(_) => DataType::Int64,
+            UInt8(_) => DataType::UInt8,
             UInt16(_) => DataType::UInt16,
             UInt32(_) => DataType::UInt32,
             UInt64(_) => DataType::UInt64,
             Float32(_) => DataType::Float32,
             Float64(_) => DataType::Float64,
-            Utf8(_)   => DataType::Utf8,
+            Utf8(_) => DataType::Utf8,
             Binary(_) => DataType::Binary,
             Date32(_) => DataType::Date32,
         }
     }
 
-    /// Convenience predicate matching Kotlin's `value == null` check.
+    /// Convenience predicate returning `true` for `Null`.
     pub fn is_null(&self) -> bool {
         matches!(self, ScalarValue::Null)
     }
@@ -70,9 +66,9 @@ mod tests {
 
     #[test]
     fn data_type_round_trip() {
-        assert_eq!(ScalarValue::Int32(5).data_type(),    DataType::Int32);
+        assert_eq!(ScalarValue::Int32(5).data_type(), DataType::Int32);
         assert_eq!(ScalarValue::Utf8("x".into()).data_type(), DataType::Utf8);
-        assert_eq!(ScalarValue::Null.data_type(),         DataType::Null);
+        assert_eq!(ScalarValue::Null.data_type(), DataType::Null);
     }
 
     #[test]

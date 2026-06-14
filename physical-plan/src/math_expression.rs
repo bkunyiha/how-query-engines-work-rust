@@ -1,40 +1,38 @@
-//! Port of `kquery/physical-plan/src/main/kotlin/expressions/MathExpression.kt`.
 //!
-//! Arithmetic binary operators: `+`, `-`, `*`, `/`. In Kotlin these form a
-//! three-level hierarchy — `BinaryExpression` (evaluate both sides + coerce)
-//! → `MathExpression` (build an output vector by evaluating each cell)
+//! Arithmetic binary operators: `+`, `-`, `*`, `/`. These form a three-level
+//! template-method hierarchy — `BinaryExpression` (evaluate both sides +
+//! coerce) → `MathExpression` (build an output vector by evaluating each cell)
 //! → `AddExpression` / `SubtractExpression` / … (the per-cell arithmetic).
 //!
-//! ## Translation note — three-level template method
+//! ## Three-level template method
 //! [`MathExpression`] is a sub-trait of [`BinaryExpression`] that adds the per-cell
 //! kernel [`MathExpression::evaluate_cell`]. The middle layer's "build a vector by
 //! looping over cells" logic lives in the shared helper [`math_evaluate_pair`]
 //! rather than as a `BinaryExpression::evaluate_pair` default, because Rust does
 //! not let a sub-trait provide a default body for a super-trait's required method.
 //! Each concrete operator therefore wires the three layers together with three
-//! small impls (`MathExpression`, `BinaryExpression`, `Expression`) — verbose, but
-//! it makes the template-method structure explicit and faithful to the Kotlin.
+//! small impls (`MathExpression`, `BinaryExpression`, `Expression`) — verbose,
+//! but it makes the template-method structure explicit.
 //!
-//! ## Translation note — integer overflow
-//! The JVM's integer `+`/`-`/`*` wrap silently on overflow (two's complement).
-//! Rust's `+` panics on overflow in debug builds, so the integer arms use
-//! `wrapping_add`/`wrapping_sub`/`wrapping_mul` to reproduce the JVM semantics
-//! exactly. Floating-point arithmetic and integer division use the plain
-//! operators (division by zero panics in both languages).
+//! ## Integer overflow
+//! Rust's `+`/`-`/`*` panic on integer overflow in debug builds; the integer
+//! arms here use `wrapping_add`/`wrapping_sub`/`wrapping_mul` so overflow
+//! silently wraps (two's complement) and behaviour is consistent across
+//! debug and release. Floating-point arithmetic and integer division use the
+//! plain operators (division by zero panics).
 
 use crate::binary_expression::BinaryExpression;
-use crate::expressions::{as_f32, as_f64, as_i16, as_i32, as_i64, as_i8, Expression};
+use crate::expressions::{Expression, as_f32, as_f64, as_i8, as_i16, as_i32, as_i64};
 use arrow_schema::DataType;
 use datatypes::{ArrowVectorBuilder, ColumnVector, RecordBatch, ScalarValue};
 use std::fmt;
 use std::sync::Arc;
 
-/// An arithmetic binary expression. Kotlin `abstract class MathExpression`.
+/// An arithmetic binary expression.
 pub trait MathExpression: BinaryExpression {
     /// Compute one output cell from the two input cells and their (shared) type.
-    /// Kotlin: the abstract `evaluate(l: Any?, r: Any?, arrowType: ArrowType): Any?`.
     fn evaluate_cell(&self, l: &ScalarValue, r: &ScalarValue, arrow_type: &DataType)
-        -> ScalarValue;
+    -> ScalarValue;
 
     /// Wire-format operator name (`"add"`, `"subtract"`, `"multiply"`,
     /// `"divide"`). Used by `protobuf::serialize_physical_expr` to serialise
@@ -44,11 +42,11 @@ pub trait MathExpression: BinaryExpression {
 }
 
 /// Build an output column the same type as the left input by evaluating the
-/// operator cell-by-cell. Kotlin: `MathExpression.evaluate(l, r)`.
+/// operator cell-by-cell.
 ///
 /// Walking the column one cell at a time (rather than reaching for an
-/// `arrow::compute` arithmetic kernel) is deliberate — see ARCHITECTURE.md §4.6.
-/// It is what teaches how the operator works at the value level.
+/// `arrow::compute` arithmetic kernel) is deliberate — it teaches how the
+/// operator works at the value level.
 pub(crate) fn math_evaluate_pair<M: MathExpression + ?Sized>(
     m: &M,
     l: &dyn ColumnVector,
@@ -68,7 +66,7 @@ pub(crate) fn math_evaluate_pair<M: MathExpression + ?Sized>(
 // AddExpression
 // ---------------------------------------------------------------------------
 
-/// `l + r`. Kotlin `AddExpression`.
+/// `l + r`.
 pub struct AddExpression {
     l: Arc<dyn Expression>,
     r: Arc<dyn Expression>,
@@ -142,7 +140,7 @@ impl fmt::Display for AddExpression {
 // SubtractExpression
 // ---------------------------------------------------------------------------
 
-/// `l - r`. Kotlin `SubtractExpression`.
+/// `l - r`.
 pub struct SubtractExpression {
     l: Arc<dyn Expression>,
     r: Arc<dyn Expression>,
@@ -216,7 +214,7 @@ impl fmt::Display for SubtractExpression {
 // MultiplyExpression
 // ---------------------------------------------------------------------------
 
-/// `l * r`. Kotlin `MultiplyExpression`.
+/// `l * r`.
 pub struct MultiplyExpression {
     l: Arc<dyn Expression>,
     r: Arc<dyn Expression>,
@@ -290,9 +288,7 @@ impl fmt::Display for MultiplyExpression {
 // DivideExpression
 // ---------------------------------------------------------------------------
 
-/// `l / r`. Kotlin `DivideExpression`. Integer division truncates and division by
-/// zero panics — the same observable behaviour as the JVM original (which throws
-/// `ArithmeticException`).
+/// `l / r`. Integer division truncates and division by zero panics.
 pub struct DivideExpression {
     l: Arc<dyn Expression>,
     r: Arc<dyn Expression>,

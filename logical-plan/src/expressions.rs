@@ -1,69 +1,53 @@
-//! Port of `kquery/logical-plan/src/main/kotlin/Expressions.kt`.
-//!
 //! # What lives here vs. in `logical_expr.rs`
 //!
-//! `Expressions.kt` held three kinds of thing: (1) the concrete `LogicalExpr`
-//! implementing classes, (2) the `AggregateExpr` family, and (3) the convenience
-//! constructors. The port routes each to the file where it belongs:
+//! This module holds two kinds of thing: (1) the `AggregateExpr` family, and
+//! (2) the convenience constructors for `LogicalExpr` and `AggregateExpr`.
 //!
-//! - (1) The plain `LogicalExpr` implementors are the SUMMANDS of the
-//!   `LogicalExpr` sum type. A sum type *is* its summands, so they collapse into
-//!   the enum in `logical_expr.rs` and are NOT here.
+//! - (1) `AggregateExpr` is its own sum type — a narrow family (`Sum`, `Min`,
+//!   `Max`, `Avg`, `Count`, `CountDistinct`) that is also part of the broader
+//!   `LogicalExpr` family. The `Aggregate` plan ranges over a typed
+//!   `Vec<AggregateExpr>`, and the `From<AggregateExpr> for LogicalExpr` impl
+//!   below bridges an aggregate back into `LogicalExpr` via the single
+//!   `LogicalExpr::AggregateExpr` variant — exactly the shape of DataFusion's
+//!   `Expr::AggregateFunction`.
 //!
-//! - (2) `AggregateExpr` is its **own** sum type and lives here. In Kotlin it is
-//!   `abstract class AggregateExpr : LogicalExpr` — a *narrow* family that is
-//!   also part of the broad `LogicalExpr` family. Rust `enum`s have no
-//!   inheritance, so the port keeps `AggregateExpr` as a distinct enum (the
-//!   `Aggregate` plan ranges over a typed `Vec<AggregateExpr>`) and bridges it
-//!   into `LogicalExpr` with the single `LogicalExpr::AggregateExpr` variant —
-//!   exactly the shape of DataFusion's `Expr::AggregateFunction`. The
-//!   `From<AggregateExpr> for LogicalExpr` impl below *is* that bridge.
-//!
-//! - (3) The convenience constructors are *introduction forms* — functions INTO
+//! - (2) The convenience constructors are introduction forms — functions into
 //!   a type (`col: &str -> LogicalExpr`, `lit_long: i64 -> LogicalExpr`, the
 //!   `eq`/`add`/… builder methods, and `sum`/`min`/… which build an
-//!   `AggregateExpr`). An arrow that merely *targets* a type is separable from
-//!   that type's definition, so they live here.
+//!   `AggregateExpr`). They live here rather than in `logical_expr.rs` so the
+//!   enum definition stays narrowly focused.
 //!
-//! Spelling shifts: Kotlin uses overloaded `lit(...)` and infix operators
-//! (`a eq b`). Rust has neither, so the literal constructors are spelled out
-//! (`lit_string`, `lit_long`, …) and the infix operators become `self`-consuming
-//! methods (`a.eq(b)`, `a.mult(b).alias("x")`).
+//! Literal constructors are spelled out per type (`lit_string`, `lit_long`,
+//! …) because Rust has no function overloading; comparison and arithmetic
+//! builders are `self`-consuming methods (`a.eq(b)`, `a.mult(b).alias("x")`).
 
 use crate::logical_expr::LogicalExpr;
 use crate::logical_plan::LogicalPlan;
 use arrow_schema::DataType;
-use datatypes::arrow_types::{INT32_TYPE, UINT32_TYPE};
 use datatypes::Field;
+use datatypes::arrow_types::{INT32_TYPE, UINT32_TYPE};
 use std::fmt;
 
-/// Aggregate functions. Kotlin: `abstract class AggregateExpr : LogicalExpr`
-/// with the `Sum` / `Min` / `Max` / `Avg` / `Count` / `CountDistinct`
-/// subclasses. Kept as its own enum so the `Aggregate` plan and
+/// Aggregate functions: `Sum` / `Min` / `Max` / `Avg` / `Count` /
+/// `CountDistinct`. Kept as its own enum so the `Aggregate` plan and
 /// `DataFrame::aggregate` keep a typed `Vec<AggregateExpr>`; bridged into
 /// `LogicalExpr` (for nesting inside expressions, e.g. `HAVING`) by the
-/// `From<AggregateExpr> for LogicalExpr` impl below — the analogue of Kotlin's
-/// `AggregateExpr : LogicalExpr` and of DataFusion's `Expr::AggregateFunction`.
+/// `From<AggregateExpr> for LogicalExpr` impl below — the analogue of
+/// DataFusion's `Expr::AggregateFunction`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AggregateExpr {
-    /// Kotlin `Sum`.
     Sum(LogicalExpr),
-    /// Kotlin `Min`.
     Min(LogicalExpr),
-    /// Kotlin `Max`.
     Max(LogicalExpr),
-    /// Kotlin `Avg`.
     Avg(LogicalExpr),
-    /// Kotlin `Count`.
     Count(LogicalExpr),
-    /// Kotlin `CountDistinct`.
     CountDistinct(LogicalExpr),
 }
 
 impl AggregateExpr {
-    /// Kotlin: `AggregateExpr.toField(input)`. SUM/MIN/MAX/AVG carry the data
-    /// type of their input expression; COUNT and COUNT DISTINCT are integer
-    /// counts.
+    /// Compute the output `Field` for this aggregate against `input`'s schema.
+    /// SUM/MIN/MAX/AVG carry the data type of their input expression; COUNT
+    /// and COUNT DISTINCT are integer counts.
     pub fn to_field(&self, input: &LogicalPlan) -> Field {
         match self {
             AggregateExpr::Sum(e) => Field::new("SUM", e.to_field(input).data_type),
@@ -90,8 +74,7 @@ impl fmt::Display for AggregateExpr {
 }
 
 /// The bridge: inject an `AggregateExpr` into `LogicalExpr` so it can nest
-/// inside any expression. Kotlin gets this free via `AggregateExpr : LogicalExpr`;
-/// the Rust port spells it out (cf. DataFusion's `Expr::AggregateFunction`).
+/// inside any expression (cf. DataFusion's `Expr::AggregateFunction`).
 impl From<AggregateExpr> for LogicalExpr {
     fn from(agg: AggregateExpr) -> Self {
         LogicalExpr::AggregateExpr(Box::new(agg))
@@ -99,116 +82,152 @@ impl From<AggregateExpr> for LogicalExpr {
 }
 
 // ==============================================================
-// Infix-operator equivalents — Kotlin `infix fun LogicalExpr.eq(rhs)` etc.
-// become `self`-consuming builder methods.
+// `self`-consuming builder methods for comparison and arithmetic.
 // ==============================================================
-// `add` / `div` deliberately mirror the Kotlin infix builder names (alongside
-// `subtract` / `mult` / `modulus`); they build AST nodes, not compute values,
-// so they are intentionally *not* `std::ops::{Add, Div}` impls.
+// `add` / `div` are deliberately named methods (alongside `subtract` / `mult` /
+// `modulus`); they build AST nodes, not compute values, so they are
+// intentionally *not* `std::ops::{Add, Div}` impls.
 #[allow(clippy::should_implement_trait)]
 impl LogicalExpr {
     pub fn eq(self, rhs: LogicalExpr) -> LogicalExpr {
-        LogicalExpr::Eq { l: Box::new(self), r: Box::new(rhs) }
+        LogicalExpr::Eq {
+            l: Box::new(self),
+            r: Box::new(rhs),
+        }
     }
     pub fn neq(self, rhs: LogicalExpr) -> LogicalExpr {
-        LogicalExpr::Neq { l: Box::new(self), r: Box::new(rhs) }
+        LogicalExpr::Neq {
+            l: Box::new(self),
+            r: Box::new(rhs),
+        }
     }
     pub fn gt(self, rhs: LogicalExpr) -> LogicalExpr {
-        LogicalExpr::Gt { l: Box::new(self), r: Box::new(rhs) }
+        LogicalExpr::Gt {
+            l: Box::new(self),
+            r: Box::new(rhs),
+        }
     }
     pub fn gteq(self, rhs: LogicalExpr) -> LogicalExpr {
-        LogicalExpr::GtEq { l: Box::new(self), r: Box::new(rhs) }
+        LogicalExpr::GtEq {
+            l: Box::new(self),
+            r: Box::new(rhs),
+        }
     }
     pub fn lt(self, rhs: LogicalExpr) -> LogicalExpr {
-        LogicalExpr::Lt { l: Box::new(self), r: Box::new(rhs) }
+        LogicalExpr::Lt {
+            l: Box::new(self),
+            r: Box::new(rhs),
+        }
     }
     pub fn lteq(self, rhs: LogicalExpr) -> LogicalExpr {
-        LogicalExpr::LtEq { l: Box::new(self), r: Box::new(rhs) }
+        LogicalExpr::LtEq {
+            l: Box::new(self),
+            r: Box::new(rhs),
+        }
     }
     pub fn and(self, rhs: LogicalExpr) -> LogicalExpr {
-        LogicalExpr::And { l: Box::new(self), r: Box::new(rhs) }
+        LogicalExpr::And {
+            l: Box::new(self),
+            r: Box::new(rhs),
+        }
     }
     pub fn or(self, rhs: LogicalExpr) -> LogicalExpr {
-        LogicalExpr::Or { l: Box::new(self), r: Box::new(rhs) }
+        LogicalExpr::Or {
+            l: Box::new(self),
+            r: Box::new(rhs),
+        }
     }
     pub fn add(self, rhs: LogicalExpr) -> LogicalExpr {
-        LogicalExpr::Add { l: Box::new(self), r: Box::new(rhs) }
+        LogicalExpr::Add {
+            l: Box::new(self),
+            r: Box::new(rhs),
+        }
     }
     pub fn subtract(self, rhs: LogicalExpr) -> LogicalExpr {
-        LogicalExpr::Subtract { l: Box::new(self), r: Box::new(rhs) }
+        LogicalExpr::Subtract {
+            l: Box::new(self),
+            r: Box::new(rhs),
+        }
     }
     pub fn mult(self, rhs: LogicalExpr) -> LogicalExpr {
-        LogicalExpr::Multiply { l: Box::new(self), r: Box::new(rhs) }
+        LogicalExpr::Multiply {
+            l: Box::new(self),
+            r: Box::new(rhs),
+        }
     }
     pub fn div(self, rhs: LogicalExpr) -> LogicalExpr {
-        LogicalExpr::Divide { l: Box::new(self), r: Box::new(rhs) }
+        LogicalExpr::Divide {
+            l: Box::new(self),
+            r: Box::new(rhs),
+        }
     }
     pub fn modulus(self, rhs: LogicalExpr) -> LogicalExpr {
-        LogicalExpr::Modulus { l: Box::new(self), r: Box::new(rhs) }
+        LogicalExpr::Modulus {
+            l: Box::new(self),
+            r: Box::new(rhs),
+        }
     }
     pub fn alias(self, alias: impl Into<String>) -> LogicalExpr {
-        LogicalExpr::Alias { expr: Box::new(self), alias: alias.into() }
+        LogicalExpr::Alias {
+            expr: Box::new(self),
+            alias: alias.into(),
+        }
     }
 }
 
 // ==============================================================
-// Convenience constructors — Kotlin top-level `fun col`, `fun lit`, `fun cast`,
-// `fun max`, etc.
+// Convenience constructors for `LogicalExpr` and `AggregateExpr`.
 // ==============================================================
 
-/// Create a column reference by name. Kotlin: `fun col(name)`.
+/// Create a column reference by name.
 pub fn col(name: impl Into<String>) -> LogicalExpr {
     LogicalExpr::Column(name.into())
 }
 
-/// Kotlin: `fun lit(value: String)`.
+/// Literal string.
 pub fn lit_string(value: impl Into<String>) -> LogicalExpr {
     LogicalExpr::LiteralString(value.into())
 }
-/// Kotlin: `fun lit(value: Long)`.
+/// Literal `i64`.
 pub fn lit_long(value: i64) -> LogicalExpr {
     LogicalExpr::LiteralLong(value)
 }
-/// Kotlin: `fun lit(value: Float)`.
+/// Literal `f32`.
 pub fn lit_float(value: f32) -> LogicalExpr {
     LogicalExpr::LiteralFloat(value)
 }
-/// Kotlin: `fun lit(value: Double)`.
+/// Literal `f64`.
 pub fn lit_double(value: f64) -> LogicalExpr {
     LogicalExpr::LiteralDouble(value)
 }
-/// Kotlin: `fun lit(value: LocalDate)`. Takes a `chrono::NaiveDate`
-/// (the Rust analogue of `java.time.LocalDate`).
+/// Literal date.
 pub fn lit_date(value: chrono::NaiveDate) -> LogicalExpr {
     LogicalExpr::LiteralDate(value)
 }
 
-/// Kotlin: `fun cast(expr, dataType)`.
+/// Cast `expr` to `data_type`.
 pub fn cast(expr: LogicalExpr, data_type: DataType) -> LogicalExpr {
-    LogicalExpr::Cast { expr: Box::new(expr), data_type }
+    LogicalExpr::Cast {
+        expr: Box::new(expr),
+        data_type,
+    }
 }
 
-/// Kotlin: `Sum(expr)`.
 pub fn sum(expr: LogicalExpr) -> AggregateExpr {
     AggregateExpr::Sum(expr)
 }
-/// Kotlin: `Min(expr)`.
 pub fn min(expr: LogicalExpr) -> AggregateExpr {
     AggregateExpr::Min(expr)
 }
-/// Kotlin: `fun max(expr) = Max(expr)`.
 pub fn max(expr: LogicalExpr) -> AggregateExpr {
     AggregateExpr::Max(expr)
 }
-/// Kotlin: `Avg(expr)`.
 pub fn avg(expr: LogicalExpr) -> AggregateExpr {
     AggregateExpr::Avg(expr)
 }
-/// Kotlin: `Count(expr)`.
 pub fn count(expr: LogicalExpr) -> AggregateExpr {
     AggregateExpr::Count(expr)
 }
-/// Kotlin: `CountDistinct(expr)`.
 pub fn count_distinct(expr: LogicalExpr) -> AggregateExpr {
     AggregateExpr::CountDistinct(expr)
 }

@@ -1,5 +1,3 @@
-//! Port of `kquery/benchmarks/src/main/kotlin/TpchRunner.kt`.
-//!
 //! Runs an arbitrary TPC-H SQL query against a directory of TPC-H Parquet
 //! files.
 //!
@@ -14,11 +12,10 @@
 //! `customer.parquet`, `lineitem.parquet`, `nation.parquet`, `orders.parquet`,
 //! `part.parquet`, `partsupp.parquet`, `region.parquet`, `supplier.parquet`.
 //!
-//! This is the second of the two definition-of-done binaries from `README.md`
-//! (the other is `nyc_taxi` in `examples`). With the `LiteralDate` lowering
-//! in place (`query-planner` → `chrono::NaiveDate` → days-since-epoch), Q1's
-//! `date '1998-12-01' - interval '68 days'` predicate plans correctly through
-//! the engine. Whether it executes end-to-end depends on
+//! With the `LiteralDate` lowering in place (`query-planner` →
+//! `chrono::NaiveDate` → days-since-epoch), Q1's
+//! `date '1998-12-01' - interval '68 days'` predicate plans correctly
+//! through the engine. Whether it executes end-to-end depends on
 //! `DateSubtractIntervalExpression` at the physical layer.
 
 use std::collections::HashMap;
@@ -32,16 +29,14 @@ use datatypes::RecordBatch;
 use datatypes::record_batch::to_csv;
 use execution::ExecutionContext;
 
-/// The eight TPC-H tables. Same set as the Kotlin original.
+/// The eight TPC-H tables.
 const TPCH_TABLES: &[&str] = &[
-    "customer", "lineitem", "nation", "orders", "part", "partsupp", "region",
-    "supplier",
+    "customer", "lineitem", "nation", "orders", "part", "partsupp", "region", "supplier",
 ];
 
 fn main() -> ExitCode {
     env_logger::init();
 
-    // Match Kotlin's: `if (args.size != 2) { ... System.exit(1) }`.
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.len() != 2 {
         eprintln!("Usage: tpch_runner <sql-file> <data-dir>");
@@ -54,7 +49,7 @@ fn main() -> ExitCode {
     let sql_file = &args[0];
     let data_dir = &args[1];
 
-    // Read the SQL query from the file. Kotlin: `File(sqlFile).readText()`.
+    // Read the SQL query from the file.
     let sql = fs::read_to_string(sql_file)
         .unwrap_or_else(|e| panic!("cannot read SQL file '{sql_file}': {e}"));
     println!("Executing query from {sql_file}:");
@@ -69,8 +64,7 @@ fn main() -> ExitCode {
         ctx.register_data_source(table, source);
     }
 
-    // Execute and time. Kotlin wraps the whole `execute + forEach` in
-    // `measureTimeMillis`; the Rust analogue is `Instant::now()` + `elapsed()`.
+    // Execute and time via `Instant::now()` + `elapsed()`.
     let df = ctx.sql(&sql);
     let start = Instant::now();
     let results: Box<dyn Iterator<Item = RecordBatch>> = ctx.execute_data_frame(&df);

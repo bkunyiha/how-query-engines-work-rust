@@ -1,31 +1,22 @@
-//! Port of `kquery/sql/src/main/kotlin/SqlPlanner.kt`.
-//!
 //! Translates a parsed [`SqlSelect`] into a logical plan (a [`DataFrame`]),
 //! resolving aggregates, projections, filters, GROUP BY, HAVING, and LIMIT.
 //!
-//! ## Translation notes
-//! - Aggregates: because the port folds the aggregate functions into
-//!   `LogicalExpr` (mirroring Kotlin's `AggregateExpr : LogicalExpr`), the
-//!   projection list is a `Vec<LogicalExpr>` that may contain aggregate variants
-//!   directly, just as Kotlin's `List<LogicalExpr>` may contain `AggregateExpr`s.
-//! - `createLogicalExpr` in Kotlin threads an `input: DataFrame` argument that
-//!   is never actually read (it is only passed down the recursion). The Rust
-//!   port drops that vestigial parameter.
-//! - Kotlin uses `LinkedHashSet` (insertion-ordered) for the column-name sets;
-//!   the port uses insertion-ordered `Vec<String>` helpers to keep the same
-//!   deterministic ordering without an external `IndexSet` dependency.
+//! ## Notes
+//! - Aggregate functions are folded into `LogicalExpr`, so the projection list
+//!   is a `Vec<LogicalExpr>` that may contain aggregate variants directly.
+//! - Insertion-ordered `Vec<String>` helpers preserve deterministic ordering
+//!   without an external `IndexSet` dependency.
 //! - `parseDataType("double")` maps to arrow-rs `DataType::Float64`, so a cast
-//!   renders as `Float64` (Kotlin printed `FloatingPoint(DOUBLE)`); see the
-//!   logical-plan note on `Cast` `Display`.
-//! - `SQLException` throws become `panic!` (§3.6).
+//!   renders as `Float64`; see the logical-plan note on `Cast` `Display`.
+//! - SQL errors are reported via `panic!` (§3.6).
 
 use crate::expressions::{SqlExpr, SqlSelect};
 use arrow_schema::DataType;
 use datatypes::arrow_types::DOUBLE_TYPE;
-use logical_plan::{avg, cast, count, max, min, sum, AggregateExpr, DataFrame, LogicalExpr};
+use logical_plan::{AggregateExpr, DataFrame, LogicalExpr, avg, cast, count, max, min, sum};
 use std::collections::HashMap;
 
-/// Creates a logical plan from a parsed SQL statement. Kotlin: `class SqlPlanner`.
+/// Creates a logical plan from a parsed SQL statement.
 #[derive(Default)]
 pub struct SqlPlanner;
 
@@ -34,8 +25,7 @@ impl SqlPlanner {
         SqlPlanner
     }
 
-    /// Create a logical plan (`DataFrame`) from a parsed `SELECT`. Kotlin:
-    /// `createDataFrame(select, tables)`.
+    /// Create a logical plan (`DataFrame`) from a parsed `SELECT`.
     pub fn create_data_frame(
         &self,
         select: &SqlSelect,
@@ -48,13 +38,19 @@ impl SqlPlanner {
             .unwrap_or_else(|| panic!("No table named '{}'", select.table_name));
 
         // translate projection sql expressions into logical expressions
-        let projection_expr: Vec<LogicalExpr> =
-            select.projection.iter().map(|e| self.create_logical_expr(e)).collect();
+        let projection_expr: Vec<LogicalExpr> = select
+            .projection
+            .iter()
+            .map(|e| self.create_logical_expr(e))
+            .collect();
 
         // columns referenced in the projection
         let column_names_in_projection = get_referenced_columns(&projection_expr);
 
-        let aggregate_expr_count = projection_expr.iter().filter(|e| is_aggregate_expr(e)).count();
+        let aggregate_expr_count = projection_expr
+            .iter()
+            .filter(|e| is_aggregate_expr(e))
+            .count();
         if aggregate_expr_count == 0 && !select.group_by.is_empty() {
             panic!("GROUP BY without aggregate expressions is not supported");
         }
@@ -118,7 +114,6 @@ impl SqlPlanner {
         plan
     }
 
-    /// Kotlin: `planNonAggregateQuery(...)`.
     fn plan_non_aggregate_query(
         &self,
         select: &SqlSelect,
@@ -157,8 +152,9 @@ impl SqlPlanner {
 
             // drop the columns that were added for the selection
             let schema = plan.schema();
-            let expr: Vec<LogicalExpr> =
-                (0..n).map(|i| LogicalExpr::Column(schema.fields[i].name.clone())).collect();
+            let expr: Vec<LogicalExpr> = (0..n)
+                .map(|i| LogicalExpr::Column(schema.fields[i].name.clone()))
+                .collect();
             plan = plan.project(expr);
         }
 
@@ -168,7 +164,6 @@ impl SqlPlanner {
         plan
     }
 
-    /// Kotlin: `planAggregateQuery(...)`.
     fn plan_aggregate_query(
         &self,
         projection_expr: &[LogicalExpr],
@@ -178,8 +173,11 @@ impl SqlPlanner {
         aggregate_expr: Vec<AggregateExpr>,
     ) -> DataFrame {
         let mut plan = df;
-        let projection_without_aggregates: Vec<LogicalExpr> =
-            projection_expr.iter().filter(|e| !is_aggregate_expr(e)).cloned().collect();
+        let projection_without_aggregates: Vec<LogicalExpr> = projection_expr
+            .iter()
+            .filter(|e| !is_aggregate_expr(e))
+            .cloned()
+            .collect();
 
         // columns referenced by aggregate expressions must be available in the
         // aggregate's input
@@ -213,12 +211,14 @@ impl SqlPlanner {
             }
         }
 
-        let group_by_expr: Vec<LogicalExpr> =
-            select.group_by.iter().map(|e| self.create_logical_expr(e)).collect();
+        let group_by_expr: Vec<LogicalExpr> = select
+            .group_by
+            .iter()
+            .map(|e| self.create_logical_expr(e))
+            .collect();
         plan.aggregate(group_by_expr, aggregate_expr)
     }
 
-    /// Kotlin: `getColumnsReferencedBySelection(select, table)`.
     fn get_columns_referenced_by_selection(
         &self,
         select: &SqlSelect,
@@ -228,28 +228,28 @@ impl SqlPlanner {
         if let Some(selection) = &select.selection {
             let filter_expr = self.create_logical_expr(selection);
             visit(&filter_expr, &mut accumulator);
-            let valid: Vec<String> =
-                table.schema().fields.iter().map(|f| f.name.clone()).collect();
+            let valid: Vec<String> = table
+                .schema()
+                .fields
+                .iter()
+                .map(|f| f.name.clone())
+                .collect();
             accumulator.retain(|name| valid.contains(name));
         }
         accumulator
     }
 
-    /// Kotlin: `createLogicalExpr(expr, input)` (the unused `input` is dropped).
     fn create_logical_expr(&self, expr: &SqlExpr) -> LogicalExpr {
         match expr {
             SqlExpr::Identifier(id) => LogicalExpr::Column(id.clone()),
             SqlExpr::String(v) => LogicalExpr::LiteralString(v.clone()),
             SqlExpr::Long(v) => LogicalExpr::LiteralLong(*v),
             SqlExpr::Double(v) => LogicalExpr::LiteralDouble(*v),
-            // Kotlin: `LiteralDate(java.time.LocalDate.parse(expr.value))`.
-            // Rust analogue: `chrono::NaiveDate::parse_from_str` with the same
-            // ISO-8601 format. Panics on invalid input (matches Kotlin's
-            // `LocalDate.parse` which throws `DateTimeParseException`).
+            // Parse the literal with `chrono::NaiveDate::parse_from_str` using
+            // ISO-8601 format. Panics on invalid input.
             SqlExpr::Date(v) => LogicalExpr::LiteralDate(
-                chrono::NaiveDate::parse_from_str(v, "%Y-%m-%d").unwrap_or_else(|e| {
-                    panic!("invalid date literal '{v}': {e}")
-                }),
+                chrono::NaiveDate::parse_from_str(v, "%Y-%m-%d")
+                    .unwrap_or_else(|e| panic!("invalid date literal '{v}': {e}")),
             ),
             SqlExpr::Interval(v) => self.parse_interval(v),
             SqlExpr::BinaryExpr { l, op, r } => {
@@ -271,7 +271,10 @@ impl SqlPlanner {
                         if matches!(l, LogicalExpr::LiteralDate(_))
                             && matches!(r, LogicalExpr::LiteralIntervalDays(_))
                         {
-                            LogicalExpr::DateAddInterval { date: Box::new(l), interval: Box::new(r) }
+                            LogicalExpr::DateAddInterval {
+                                date: Box::new(l),
+                                interval: Box::new(r),
+                            }
                         } else {
                             l.add(r)
                         }
@@ -295,9 +298,10 @@ impl SqlPlanner {
                 }
             }
             SqlExpr::Alias { expr, alias } => self.create_logical_expr(expr).alias(alias.clone()),
-            SqlExpr::Cast { expr, data_type } => {
-                cast(self.create_logical_expr(expr), self.parse_data_type(data_type))
-            }
+            SqlExpr::Cast { expr, data_type } => cast(
+                self.create_logical_expr(expr),
+                self.parse_data_type(data_type),
+            ),
             SqlExpr::Function { id, args } => {
                 let upper = id.to_uppercase();
                 match upper.as_str() {
@@ -335,7 +339,6 @@ impl SqlPlanner {
         }
     }
 
-    /// Kotlin: `parseDataType(id)`.
     fn parse_data_type(&self, id: &str) -> DataType {
         match id {
             "double" => DOUBLE_TYPE,
@@ -343,7 +346,6 @@ impl SqlPlanner {
         }
     }
 
-    /// Kotlin: `parseInterval(value)` — accepts `"N days"` / `"N day"`.
     fn parse_interval(&self, value: &str) -> LogicalExpr {
         let days = parse_interval_days(value.trim()).unwrap_or_else(|| {
             panic!("Invalid interval format: '{value}'. Expected format: 'N days'")
@@ -352,8 +354,7 @@ impl SqlPlanner {
     }
 }
 
-/// Whether `expr` is an aggregate, or an alias wrapping one. Kotlin:
-/// `isAggregateExpr(expr)`.
+/// Whether `expr` is an aggregate, or an alias wrapping one.
 fn is_aggregate_expr(expr: &LogicalExpr) -> bool {
     match expr {
         LogicalExpr::AggregateExpr(_) => true,
@@ -363,7 +364,7 @@ fn is_aggregate_expr(expr: &LogicalExpr) -> bool {
 }
 
 /// Collect the column names referenced by a list of expressions, in first-seen
-/// order. Kotlin: `getReferencedColumns(exprs)`.
+/// order.
 fn get_referenced_columns(exprs: &[LogicalExpr]) -> Vec<String> {
     let mut accumulator = Vec::new();
     for e in exprs {
@@ -373,16 +374,14 @@ fn get_referenced_columns(exprs: &[LogicalExpr]) -> Vec<String> {
 }
 
 /// Recursively collect column names into `acc` (insertion-ordered, deduped).
-/// Kotlin: `visit(expr, accumulator)`.
 fn visit(expr: &LogicalExpr, acc: &mut Vec<String>) {
     match expr {
-        LogicalExpr::Column(name) => {
-            if !acc.contains(name) {
-                acc.push(name.clone());
-            }
+        LogicalExpr::Column(name) if !acc.contains(name) => {
+            acc.push(name.clone());
         }
+        LogicalExpr::Column(_) => {}
         LogicalExpr::Alias { expr, .. } => visit(expr, acc),
-        // Kotlin's `BinaryExpr` covers every two-operand expression.
+        // Every two-operand expression.
         LogicalExpr::Eq { l, r }
         | LogicalExpr::Neq { l, r }
         | LogicalExpr::Gt { l, r }
@@ -405,7 +404,6 @@ fn visit(expr: &LogicalExpr, acc: &mut Vec<String>) {
 }
 
 /// Collect the column names referenced by an aggregate's argument expression.
-/// Kotlin's `visit` handles `is AggregateExpr` by recursing into `expr.expr`.
 fn visit_aggregate(agg: &AggregateExpr, acc: &mut Vec<String>) {
     let arg = match agg {
         AggregateExpr::Sum(e)
@@ -429,11 +427,14 @@ fn ordered_extend(target: &mut Vec<String>, extra: &[String]) {
 
 /// Items of `from` that are not in `remove`, preserving `from`'s order.
 fn ordered_difference(from: &[String], remove: &[String]) -> Vec<String> {
-    from.iter().filter(|c| !remove.contains(c)).cloned().collect()
+    from.iter()
+        .filter(|c| !remove.contains(c))
+        .cloned()
+        .collect()
 }
 
-/// Parse a `"<digits> day(s)"` interval (case-insensitive), mirroring Kotlin's
-/// `Regex("(\\d+)\\s+days?", IGNORE_CASE).matchEntire(value.trim())`.
+/// Parse a `"<digits> day(s)"` interval (case-insensitive), accepting the
+/// pattern `(\d+)\s+days?`.
 fn parse_interval_days(s: &str) -> Option<i64> {
     let lower = s.to_lowercase();
     let head = lower
@@ -452,18 +453,17 @@ fn parse_interval_days(s: &str) -> Option<i64> {
 
 #[cfg(test)]
 mod tests {
-    //! Port of `kquery/sql/src/test/kotlin/SqlPlannerTest.kt`.
     use super::*;
     use crate::pratt_parser::PrattParser;
     use crate::sql_parser::SqlParser;
     use crate::sql_tokenizer::SqlTokenizer;
     use datasource::CsvDataSource;
-    use logical_plan::{format, LogicalPlan, Scan};
+    use logical_plan::{LogicalPlan, Scan, format};
     use std::sync::Arc;
 
-    /// Tokenize → parse → plan, returning the formatted logical plan. Mirrors
-    /// the Kotlin test's `plan(sql)` helper (table `employee` backed by the
-    /// shared `testdata/employee.csv`, scanned with an empty path).
+    /// Tokenize → parse → plan, returning the formatted logical plan. Uses
+    /// table `employee` backed by the shared `testdata/employee.csv`, scanned
+    /// with an empty path.
     fn plan(sql: &str) -> String {
         let tokens = SqlTokenizer::new(sql).tokenize();
         let parsed = SqlParser::new(tokens).parse(0);
@@ -473,9 +473,16 @@ mod tests {
         };
 
         let path = "../testdata/employee.csv";
-        let scan = Scan::new("", Arc::new(CsvDataSource::new(path, None, true, 1024)), vec![]);
+        let scan = Scan::new(
+            "",
+            Arc::new(CsvDataSource::new(path, None, true, 1024)),
+            vec![],
+        );
         let mut tables: HashMap<String, DataFrame> = HashMap::new();
-        tables.insert("employee".to_string(), DataFrame::new(LogicalPlan::Scan(scan)));
+        tables.insert(
+            "employee".to_string(),
+            DataFrame::new(LogicalPlan::Scan(scan)),
+        );
 
         let df = SqlPlanner::new().create_data_frame(&select, &tables);
         format(df.logical_plan())
@@ -523,9 +530,8 @@ mod tests {
 
     #[test]
     fn select_filter_on_projection_and_not() {
-        let plan = plan(
-            "SELECT last_name AS foo FROM employee WHERE foo = 'Einstein' AND state = 'CA'",
-        );
+        let plan =
+            plan("SELECT last_name AS foo FROM employee WHERE foo = 'Einstein' AND state = 'CA'");
         assert_eq!(
             plan,
             "Projection: #foo\n\
@@ -548,9 +554,8 @@ mod tests {
 
     #[test]
     fn plan_aggregate_query_with_having() {
-        let plan = plan(
-            "SELECT state, MAX(salary) FROM employee GROUP BY state HAVING MAX(salary) > 10",
-        );
+        let plan =
+            plan("SELECT state, MAX(salary) FROM employee GROUP BY state HAVING MAX(salary) > 10");
         assert_eq!(
             plan,
             "Selection: MAX(#salary) > 10\n\
@@ -573,9 +578,8 @@ mod tests {
 
     #[test]
     fn plan_aggregate_query_with_filter() {
-        let plan = plan(
-            "SELECT state, MAX(salary) FROM employee WHERE salary > 50000 GROUP BY state",
-        );
+        let plan =
+            plan("SELECT state, MAX(salary) FROM employee WHERE salary > 50000 GROUP BY state");
         assert_eq!(
             plan,
             "Projection: #0, #1\n\
@@ -588,11 +592,9 @@ mod tests {
 
     #[test]
     fn plan_aggregate_query_with_cast() {
-        // Kotlin printed `FloatingPoint(DOUBLE)`; arrow-rs `DataType::Float64`
-        // `Debug`-prints as `Float64` (see the logical-plan `Cast` Display note).
-        let plan = plan(
-            "SELECT state, MAX(CAST(salary AS double)) FROM employee GROUP BY state",
-        );
+        // arrow-rs `DataType::Float64` `Debug`-prints as `Float64`
+        // (see the logical-plan `Cast` Display note).
+        let plan = plan("SELECT state, MAX(CAST(salary AS double)) FROM employee GROUP BY state");
         assert_eq!(
             plan,
             "Projection: #0, #1\n\

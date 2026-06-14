@@ -1,30 +1,15 @@
-//! Port of `kquery/datasource/src/main/kotlin/ParquetDataSource.kt`.
+//! Parquet data source. Delegates to
+//! `parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder`, which
+//! reads row groups straight into Arrow `RecordBatch`es.
 //!
-//! Parquet data source. This is the second of two
-//! library-forced substitutions in module 2: instead of porting Andy's ~192 lines
-//! of hand-rolled Hadoop / parquet-arrow / Group / GroupRecordConverter dispatch
-//! (with per-PrimitiveType branches setting each FieldVector cell), the Rust
-//! port delegates to `parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder`,
-//! which reads row groups straight into Arrow `RecordBatch`es.
-//!
-//! Translation notes:
-//! - Kotlin `ParquetDataSource(filename)` → Rust `ParquetDataSource { filename }`.
-//!   Same shape.
-//! - Kotlin's `ParquetScan` / `ParquetIterator` helper classes are not ported —
-//!   `parquet::arrow::arrow_reader::ParquetRecordBatchReader` plays the same
-//!   role as both combined.
-//! - Kotlin uses `org.apache.parquet:parquet-hadoop` + Hadoop's `Configuration`
-//!   to open the file. arrow-rs's parquet crate reads directly from a `std::fs::File`
-//!   (or any `ChunkReader`) — no Hadoop dependency needed.
-//! - Kotlin's `nextBatch()` reads one row group at a time and prints `"Reading $rows
-//!   rows"`. The Rust version leaves print statements out; arrow-rs's reader is
-//!   already row-group-paced internally.
-//! - Errors panic (file-not-found, corrupt file, etc.).
+//! ## Notes
+//! - The reader is row-group-paced internally — one batch per row group.
+//! - I/O and parse errors panic (file-not-found, corrupt file, etc.).
 
 use crate::data_source::DataSource;
-use datatypes::{schema::from_arrow as schema_from_arrow, RecordBatch, Schema};
-use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+use datatypes::{RecordBatch, Schema, schema::from_arrow as schema_from_arrow};
 use parquet::arrow::ProjectionMask;
+use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use std::fs::File;
 
 pub struct ParquetDataSource {
@@ -33,7 +18,9 @@ pub struct ParquetDataSource {
 
 impl ParquetDataSource {
     pub fn new(filename: impl Into<String>) -> Self {
-        Self { filename: filename.into() }
+        Self {
+            filename: filename.into(),
+        }
     }
 
     /// Open the file and return a fresh `ParquetRecordBatchReaderBuilder`.
@@ -41,9 +28,8 @@ impl ParquetDataSource {
         let file = File::open(&self.filename).unwrap_or_else(|e| {
             panic!("ParquetDataSource: cannot open '{}': {}", self.filename, e)
         });
-        ParquetRecordBatchReaderBuilder::try_new(file).unwrap_or_else(|e| {
-            panic!("ParquetDataSource: failed to read Parquet metadata: {}", e)
-        })
+        ParquetRecordBatchReaderBuilder::try_new(file)
+            .unwrap_or_else(|e| panic!("ParquetDataSource: failed to read Parquet metadata: {}", e))
     }
 }
 
@@ -69,24 +55,24 @@ impl DataSource for ParquetDataSource {
         } else {
             // arrow-rs uses ProjectionMask, built from leaf column names (we
             // pass top-level column names — fine for flat schemas, which is
-            // what kquery's Parquet support covers).
+            // all this Parquet reader is designed to handle).
             let parquet_schema = builder.parquet_schema();
-            let mask = ProjectionMask::columns(
-                parquet_schema,
-                projection.iter().map(String::as_str),
-            );
+            let mask =
+                ProjectionMask::columns(parquet_schema, projection.iter().map(String::as_str));
             builder.with_projection(mask)
         };
 
-        let reader = builder.build().unwrap_or_else(|e| {
-            panic!("ParquetDataSource::scan: failed to build reader: {}", e)
-        });
+        let reader = builder
+            .build()
+            .unwrap_or_else(|e| panic!("ParquetDataSource::scan: failed to build reader: {}", e));
 
         // The reader is `Iterator<Item = Result<RecordBatch, ArrowError>>`.
         // Unwrap and panic on parse errors.
-        Box::new(reader.map(|res| {
-            res.unwrap_or_else(|e| panic!("ParquetDataSource: malformed batch: {}", e))
-        }))
+        Box::new(
+            reader.map(|res| {
+                res.unwrap_or_else(|e| panic!("ParquetDataSource: malformed batch: {}", e))
+            }),
+        )
     }
 }
 
@@ -107,8 +93,17 @@ mod tests {
         // alltypes_plain.parquet has these columns (in this order):
         let names: Vec<&str> = schema.fields.iter().map(|f| f.name.as_str()).collect();
         for expected in [
-            "id", "bool_col", "tinyint_col", "smallint_col", "int_col", "bigint_col",
-            "float_col", "double_col", "date_string_col", "string_col", "timestamp_col",
+            "id",
+            "bool_col",
+            "tinyint_col",
+            "smallint_col",
+            "int_col",
+            "bigint_col",
+            "float_col",
+            "double_col",
+            "date_string_col",
+            "string_col",
+            "timestamp_col",
         ] {
             assert!(names.contains(&expected), "missing column: {}", expected);
         }
@@ -124,9 +119,9 @@ mod tests {
         // The file has 8 rows in the canonical alltypes_plain fixture.
         assert_eq!(row_count(batch), 8);
 
-        // Spot-check a few values match the Kotlin test's expected list.
+        // Spot-check the column values.
         let id_col = ArrowFieldVector::new(batch.column(0).clone());
-        // Per kquery's ParquetDataSourceTest, the expected join is "4,5,6,7,2,3,0,1".
+        // Expected `id` sequence in the alltypes_plain fixture is 4,5,6,7,2,3,0,1.
         let expected: Vec<i32> = vec![4, 5, 6, 7, 2, 3, 0, 1];
         for (i, want) in expected.iter().enumerate() {
             assert_eq!(id_col.get_value(i), ScalarValue::Int32(*want));
@@ -141,7 +136,7 @@ mod tests {
         let batch = &batches[0];
         assert_eq!(batch.num_columns(), 1);
         let col = ArrowFieldVector::new(batch.column(0).clone());
-        // Per kquery test: all values should be non-null.
+        // All values should be non-null.
         for i in 0..col.size() {
             assert!(!col.get_value(i).is_null(), "string at index {} is null", i);
         }

@@ -1,14 +1,13 @@
-//! Port of `kquery/physical-plan/src/main/kotlin/expressions/MinExpression.kt`.
 //!
 //! `MIN(expr)` — keeps the smallest non-null value seen.
 
-use crate::aggregate_expression::{scalar_lt, AggregateExpression};
+use crate::aggregate_expression::{AggregateExpression, scalar_lt};
 use crate::expressions::{Accumulator, AccumulatorValue, Expression};
 use datatypes::ScalarValue;
 use std::fmt;
 use std::sync::Arc;
 
-/// `MIN(expr)`. Kotlin `MinExpression`.
+/// `MIN(expr)`.
 pub struct MinExpression {
     expr: Arc<dyn Expression>,
 }
@@ -37,8 +36,7 @@ impl fmt::Display for MinExpression {
     }
 }
 
-/// Keeps the running minimum. Kotlin `MinAccumulator`. `ScalarValue::Null` is the
-/// "no value yet" state (Kotlin's `var value: Any? = null`).
+/// Keeps the running minimum. `ScalarValue::Null` is the "no value yet" state.
 pub struct MinAccumulator {
     value: ScalarValue,
 }
@@ -72,7 +70,7 @@ impl Accumulator for MinAccumulator {
     }
 
     fn merge(&mut self, other: &AccumulatorValue) {
-        // Kotlin: "merge is the same as accumulate" for MIN.
+        // For MIN, merging a partial state is the same as accumulating it.
         if let AccumulatorValue::Scalar(v) = other {
             self.accumulate(v);
         }

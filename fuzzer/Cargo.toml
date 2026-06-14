@@ -1,6 +1,6 @@
 [package]
 name         = "fuzzer"
-description  = "Random query generator for differential testing. Rust port of kquery/fuzzer."
+description  = "Random query generator for differential testing."
 edition.workspace      = true
 license.workspace      = true
 version.workspace      = true
@@ -15,7 +15,6 @@ rand         = { workspace = true }
 arrow-schema = { workspace = true }   # for `DataType` in `create_values` dispatch
 
 [dev-dependencies]
-# Smoke test (port of FuzzerTest.kt) reads testdata/employee.csv through a
-# CsvDataSource to drive create_plan(); the data-source crate is only needed
-# at test time, so it's a dev-dependency here.
+# Smoke test reads testdata/employee.csv through a `CsvDataSource` to drive
+# `create_plan()`; the data-source crate is only needed at test time.
 datasource   = { path = "../datasource" }

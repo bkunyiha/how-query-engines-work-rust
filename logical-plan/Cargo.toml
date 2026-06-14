@@ -1,6 +1,6 @@
 [package]
 name         = "logical-plan"
-description  = "LogicalPlan, LogicalExpr, DataFrame. Rust port of kquery/logical-plan."
+description  = "LogicalPlan, LogicalExpr, DataFrame."
 edition.workspace      = true
 license.workspace      = true
 version.workspace      = true
@@ -9,6 +9,6 @@ rust-version.workspace = true
 
 [dependencies]
 arrow-schema = { workspace = true }
-chrono       = { workspace = true }      # NaiveDate for `LiteralDate` (Kotlin `java.time.LocalDate`)
+chrono       = { workspace = true }      # NaiveDate for `LiteralDate`
 datatypes    = { path = "../datatypes" }
 datasource   = { path = "../datasource" }

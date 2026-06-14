@@ -1,8 +1,5 @@
 //! # benchmarks
 //!
-//! TPC-H runner and aggregated NYC-taxi benchmark. Ports
-//! `kquery/benchmarks/src/main/kotlin/`: `Benchmarks.kt`, `TpchRunner.kt`.
-//!
-//! ## Definition-of-done relevance
-//! `cargo run --bin tpch_runner -- q01.sql tpch_data/` must
-//! produce results matching the Kotlin reference.
+//! TPC-H runner and aggregated NYC-taxi benchmark. The binaries are
+//! `benchmarks` (the NYC-taxi parallel-fanout benchmark) and `tpch_runner`
+//! (which executes a TPC-H query file against a Parquet dataset).

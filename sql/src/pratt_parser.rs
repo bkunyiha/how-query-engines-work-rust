@@ -1,21 +1,16 @@
-//! Port of `kquery/sql/src/main/kotlin/PrattParser.kt`.
-//!
 //! The Pratt (Top-Down Operator Precedence) parsing loop. See
 //! <https://tdop.github.io/> for Pratt's original paper.
 //!
-//! Kotlin models this as an `interface` with one default method (`parse`) and
-//! three abstract hooks (`nextPrecedence`, `parsePrefix`, `parseInfix`). The
-//! Rust port is the direct analogue: a trait with a provided `parse` method and
-//! three required methods. Rust traits have no default *arguments*, so Kotlin's
-//! `parse(precedence: Int = 0)` becomes `parse(&mut self, precedence: i32)` and
-//! callers pass `0` explicitly.
+//! The parser is exposed as a trait with a provided `parse` method and three
+//! required hooks: `next_precedence`, `parse_prefix`, and `parse_infix`.
+//! Callers invoke `parse(&mut self, 0)` to parse a full expression.
 
 use crate::expressions::SqlExpr;
 
-/// A Pratt parser. Kotlin: `interface PrattParser`.
+/// A Pratt parser.
 pub trait PrattParser {
     /// Parse an expression, consuming infix operators that bind tighter than
-    /// `precedence`. Kotlin: `parse(precedence: Int = 0)`.
+    /// `precedence`.
     fn parse(&mut self, precedence: i32) -> Option<SqlExpr> {
         let mut expr = self.parse_prefix()?;
         while precedence < self.next_precedence() {
@@ -28,14 +23,12 @@ pub trait PrattParser {
         Some(expr)
     }
 
-    /// Precedence of the next token (0 if none / not an operator). Kotlin:
-    /// `nextPrecedence()`.
+    /// Precedence of the next token (0 if none / not an operator).
     fn next_precedence(&self) -> i32;
 
-    /// Parse the next prefix expression. Kotlin: `parsePrefix()`.
+    /// Parse the next prefix expression.
     fn parse_prefix(&mut self) -> Option<SqlExpr>;
 
-    /// Parse the next infix expression, given the already-parsed `left`. Kotlin:
-    /// `parseInfix(left, precedence)`.
+    /// Parse the next infix expression, given the already-parsed `left`.
     fn parse_infix(&mut self, left: SqlExpr, precedence: i32) -> SqlExpr;
 }

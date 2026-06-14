@@ -1,15 +1,11 @@
-//! Port of `kquery/datasource/src/main/kotlin/InMemoryDataSource.kt`.
-//!
 //! Holds a list of `RecordBatch`es in memory and serves them on `scan`.
 //! Useful for tests and as the simplest possible `DataSource` implementation.
 //!
-//! Translation notes:
-//! - Kotlin `RecordBatch(projectedSchema, projectionIndices.map { i -> batch.field(i) })`
-//!   constructs a batch via the Kotlin wrapper's constructor. In Rust the
-//!   `RecordBatch` *is* `arrow_array::RecordBatch`, constructed via
-//!   `RecordBatch::try_new(schema_arc, columns)` instead.
-//! - `Schema.select(projection)` is the rquery `Schema::select(&[String]) -> Schema`
-//!   method ported in module 1.
+//! ## Notes
+//! - `RecordBatch` is the arrow-rs `arrow_array::RecordBatch`, constructed via
+//!   `RecordBatch::try_new(schema_arc, columns)`.
+//! - `Schema::select(&[String]) -> Schema` returns a projected schema with
+//!   only the named columns, in the requested order.
 
 use crate::data_source::DataSource;
 use datatypes::{RecordBatch, Schema};
@@ -17,7 +13,7 @@ use std::sync::Arc;
 
 pub struct InMemoryDataSource {
     pub schema: Schema,
-    pub data:   Vec<RecordBatch>,
+    pub data: Vec<RecordBatch>,
 }
 
 impl InMemoryDataSource {
@@ -92,21 +88,21 @@ mod tests {
 
     fn sample_batch() -> RecordBatch {
         let arrow_schema = Arc::new(ArrowSchema::new(vec![
-            ArrowField::new("id",   INT32_TYPE,  false),
+            ArrowField::new("id", INT32_TYPE, false),
             ArrowField::new("name", STRING_TYPE, false),
-            ArrowField::new("age",  INT32_TYPE,  false),
+            ArrowField::new("age", INT32_TYPE, false),
         ]));
-        let id:   ArrayRef = Arc::new(Int32Array::from(vec![1, 2, 3]));
+        let id: ArrayRef = Arc::new(Int32Array::from(vec![1, 2, 3]));
         let name: ArrayRef = Arc::new(StringArray::from(vec!["a", "b", "c"]));
-        let age:  ArrayRef = Arc::new(Int32Array::from(vec![30, 40, 50]));
+        let age: ArrayRef = Arc::new(Int32Array::from(vec![30, 40, 50]));
         RecordBatch::try_new(arrow_schema, vec![id, name, age]).unwrap()
     }
 
     fn sample_schema() -> Schema {
         Schema::new(vec![
-            Field::new("id",   INT32_TYPE),
+            Field::new("id", INT32_TYPE),
             Field::new("name", STRING_TYPE),
-            Field::new("age",  INT32_TYPE),
+            Field::new("age", INT32_TYPE),
         ])
     }
 
@@ -115,16 +111,14 @@ mod tests {
         let ds = InMemoryDataSource::new(sample_schema(), vec![sample_batch()]);
         let batches: Vec<_> = ds.scan(&[]).collect();
         assert_eq!(batches.len(), 1);
-        assert_eq!(row_count(&batches[0]),    3);
+        assert_eq!(row_count(&batches[0]), 3);
         assert_eq!(column_count(&batches[0]), 3);
     }
 
     #[test]
     fn scan_with_projection_selects_columns_in_requested_order() {
         let ds = InMemoryDataSource::new(sample_schema(), vec![sample_batch()]);
-        let batches: Vec<_> = ds
-            .scan(&["name".to_string(), "id".to_string()])
-            .collect();
+        let batches: Vec<_> = ds.scan(&["name".to_string(), "id".to_string()]).collect();
         assert_eq!(batches.len(), 1);
         let b = &batches[0];
         assert_eq!(column_count(b), 2);

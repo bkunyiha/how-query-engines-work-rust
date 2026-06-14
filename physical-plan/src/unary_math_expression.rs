@@ -1,31 +1,29 @@
-//! Port of `kquery/physical-plan/src/main/kotlin/expressions/UnaryMathExpression.kt`.
 //!
 //! Unary math functions over a numeric column, producing a `Float64` column:
-//! `Sqrt` and `Log` (natural log). Kotlin models the shared "evaluate input, map
-//! each non-null value to a `Double` via `apply`" logic in an
-//! `abstract class UnaryMathExpression`, with each function overriding `apply`.
+//! `Sqrt` and `Log` (natural log).
 //!
-//! ## Translation note — abstract class → trait with a default method
-//! As with the binary/boolean/math families, the abstract base becomes a trait
-//! ([`UnaryMathExpression`]) with a default method (`evaluate_unary`) holding the
-//! shared loop and a required `apply` kernel. Each concrete function implements
+//! ## Trait with a default method
+//! As with the binary/boolean/math families, the shared "evaluate input, map
+//! each non-null value through `apply`" logic lives in a trait
+//! ([`UnaryMathExpression`]) with a default method (`evaluate_unary`) and a
+//! required `apply` kernel. Each concrete function implements
 //! `UnaryMathExpression` and a one-line `Expression` delegate.
 
-use crate::expressions::{number_to_f64, Expression};
+use crate::expressions::{Expression, number_to_f64};
 use datatypes::arrow_types::DOUBLE_TYPE;
 use datatypes::{ArrowVectorBuilder, ColumnVector, RecordBatch, ScalarValue};
 use std::fmt;
 use std::sync::Arc;
 
-/// A unary math function. Kotlin `abstract class UnaryMathExpression`.
+/// A unary math function.
 pub trait UnaryMathExpression: Expression {
     /// The input expression whose values are transformed.
     fn input(&self) -> &Arc<dyn Expression>;
 
-    /// The function applied to each non-null value. Kotlin: abstract `apply(Double): Double`.
+    /// The function applied to each non-null value.
     fn apply(&self, value: f64) -> f64;
 
-    /// Template method (Kotlin `evaluate(input)`): evaluate the input, then map
+    /// Template method: evaluate the input, then map
     /// each non-null value through `apply`, producing a `Float64` column.
     fn evaluate_unary(&self, input: &RecordBatch) -> Box<dyn ColumnVector> {
         let n = self.input().evaluate(input);
@@ -43,7 +41,7 @@ pub trait UnaryMathExpression: Expression {
     }
 }
 
-/// Square root. Kotlin `class Sqrt`.
+/// Square root.
 pub struct Sqrt {
     expr: Arc<dyn Expression>,
 }
@@ -79,7 +77,7 @@ impl fmt::Display for Sqrt {
     }
 }
 
-/// Natural logarithm. Kotlin `class Log`.
+/// Natural logarithm.
 pub struct Log {
     expr: Arc<dyn Expression>,
 }

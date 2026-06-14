@@ -1,41 +1,37 @@
-//! Port of `kquery/physical-plan/src/main/kotlin/expressions/BooleanExpression.kt`.
 //!
 //! Comparison and logical operators that always produce a `Boolean` column:
 //! `AND`, `OR`, `=`, `!=`, `<`, `<=`, `>`, `>=`.
 //!
-//! ## Translation note — abstract class → trait with default method
-//! As with [`crate::binary_expression::BinaryExpression`], the Kotlin
-//! `abstract class BooleanExpression` becomes a **trait with a default method**.
-//! Unlike the math family, `BooleanExpression` extends [`Expression`] directly
-//! (not `BinaryExpression`): comparison does *not* coerce numeric types — it
-//! requires the two sides to already share a type and panics otherwise. The
-//! default [`BooleanExpression::evaluate_boolean`] holds the shared "evaluate
-//! both sides, build a Boolean column cell-by-cell" logic; each concrete operator
+//! ## Trait with a default method
+//! As with [`crate::binary_expression::BinaryExpression`], `BooleanExpression`
+//! is a trait with a default method. Unlike the math family, `BooleanExpression`
+//! extends [`Expression`] directly (not `BinaryExpression`): comparison does
+//! *not* coerce numeric types — it requires the two sides to already share a
+//! type and panics otherwise. The default
+//! [`BooleanExpression::evaluate_boolean`] holds the shared "evaluate both
+//! sides, build a Boolean column cell-by-cell" logic; each concrete operator
 //! supplies only its per-cell predicate via `compare_value`.
 //!
-//! ## Translation note — the `compare_typed!` macro
-//! The Kotlin comparison classes are six near-identical `when (arrowType)` blocks
-//! that differ only in the operator (`==`, `<`, `>`, …). Rather than copy that
-//! eight-arm match six times, [`compare_typed!`] is a small `macro_rules!` macro
-//! parameterised by the operator token. `compare_typed!(l, r, t, >=)` expands to
-//! the full per-type match applying `>=` to the typed values pulled out of each
-//! `ScalarValue`. Using the real Rust operator per type also gives the correct
-//! `NaN` behaviour for free (`NaN >= x` is `false`), matching the JVM.
+//! ## The `compare_typed!` macro
+//! The six comparison operators (`==`, `!=`, `<`, `<=`, `>`, `>=`) each need a
+//! near-identical per-type match arm. [`compare_typed!`] is a small
+//! `macro_rules!` macro parameterised by the operator token:
+//! `compare_typed!(l, r, t, >=)` expands to the full per-type match applying
+//! `>=` to the typed values pulled out of each `ScalarValue`. Using the real
+//! Rust operator per type also gives the correct `NaN` behaviour for free
+//! (`NaN >= x` is `false`).
 //!
-//! ## Translation note — `Option<bool>` three-valued logic (intentional divergence)
-//! This is an *intentional* divergence from the Kotlin reference, not a faithful
-//! port. kquery has no real null support in comparisons: its `CsvDataSource` infers
-//! every column as `String`, so an empty field is `""` and the comparison's
-//! `toString` never sees a null; on a true null its numeric cast (`l as Int`) would
-//! throw an NPE. The Rust port uses arrow-rs typed inference, which reads an empty
-//! field as a genuine `ScalarValue::Null`, so the comparison must answer for nulls.
-//! We model SQL's three-valued logic directly: a comparison returns `Option<bool>`,
-//! where `None` is SQL `UNKNOWN` (the result of comparing against `NULL`). `None`
-//! propagates through every operator the way `NULL` does in SQL, `AND`/`OR` use the
-//! Kleene truth tables ([`and3`]/[`or3`]), and `evaluate_boolean` writes an `UNKNOWN`
-//! out as a `ScalarValue::Null` cell — so the output is a *nullable* Boolean column,
-//! exactly what a real SQL engine produces. `SelectionExec` keeps only `Some(true)`
-//! rows, so both `FALSE` and `UNKNOWN` correctly drop a row from a `WHERE` clause.
+//! ## `Option<bool>` three-valued logic
+//! arrow-rs typed inference reads an empty CSV field as a genuine
+//! `ScalarValue::Null`, so the comparison must answer for nulls. SQL's
+//! three-valued logic is modelled directly: a comparison returns
+//! `Option<bool>`, where `None` is SQL `UNKNOWN` (the result of comparing
+//! against `NULL`). `None` propagates through every operator the way `NULL`
+//! does in SQL, `AND`/`OR` use the Kleene truth tables ([`and3`]/[`or3`]),
+//! and `evaluate_boolean` writes an `UNKNOWN` out as a `ScalarValue::Null`
+//! cell — so the output is a *nullable* Boolean column, exactly what a real
+//! SQL engine produces. `SelectionExec` keeps only `Some(true)` rows, so both
+//! `FALSE` and `UNKNOWN` correctly drop a row from a `WHERE` clause.
 
 use crate::expressions::Expression;
 use arrow_schema::DataType;
@@ -43,19 +39,16 @@ use datatypes::arrow_types::BOOLEAN_TYPE;
 use datatypes::{ArrowVectorBuilder, ColumnVector, RecordBatch, ScalarValue};
 use std::sync::Arc;
 
-/// A boolean (comparison or logical) binary expression. Kotlin
-/// `abstract class BooleanExpression`.
+/// A boolean (comparison or logical) binary expression.
 pub trait BooleanExpression: Expression {
     /// The left operand expression.
     fn left(&self) -> &Arc<dyn Expression>;
     /// The right operand expression.
     fn right(&self) -> &Arc<dyn Expression>;
 
-    /// The per-cell predicate. Kotlin: the abstract
-    /// `evaluate(l: Any?, r: Any?, arrowType: ArrowType): Boolean`. Returns
-    /// `Option<bool>`: `Some(b)` for a definite result, `None` for SQL `UNKNOWN`
-    /// (produced whenever an operand is `NULL`). See the module note on
-    /// three-valued logic.
+    /// The per-cell predicate. Returns `Option<bool>`: `Some(b)` for a definite
+    /// result, `None` for SQL `UNKNOWN` (produced whenever an operand is
+    /// `NULL`). See the module note on three-valued logic.
     fn compare_value(
         &self,
         l: &ScalarValue,
@@ -68,10 +61,10 @@ pub trait BooleanExpression: Expression {
     /// `pb::PhysicalBinaryExprNode` with the matching `op` string.
     fn op_name(&self) -> &'static str;
 
-    /// Template method (Kotlin `evaluate(input)` + `compare`): evaluate both
-    /// sides, require equal lengths and identical types, then build a *nullable*
-    /// `Boolean` column by applying [`compare_value`](Self::compare_value)
-    /// cell-by-cell. A `None` (SQL `UNKNOWN`) result is written as a null cell.
+    /// Template method: evaluate both sides, require equal lengths and
+    /// identical types, then build a *nullable* `Boolean` column by applying
+    /// [`compare_value`](Self::compare_value) cell-by-cell. A `None` (SQL
+    /// `UNKNOWN`) result is written as a null cell.
     fn evaluate_boolean(&self, input: &RecordBatch) -> Box<dyn ColumnVector> {
         let ll = self.left().evaluate(input);
         let rr = self.right().evaluate(input);
@@ -97,8 +90,8 @@ pub trait BooleanExpression: Expression {
 }
 
 /// Expand to a per-type `match` that applies the comparison operator `$op` to the
-/// two operands, pulling the typed value out of each `ScalarValue`. The supported
-/// types mirror the Kotlin `when (arrowType)` arms. Each arm goes through
+/// two operands, pulling the typed value out of each `ScalarValue`. Each arm
+/// goes through
 /// [`cmp_opt`], so a `NULL` operand yields `None` (SQL `UNKNOWN`) instead of
 /// panicking; the result type is `Option<bool>`.
 macro_rules! compare_typed {
@@ -185,8 +178,7 @@ fn as_opt_date(v: &ScalarValue) -> Option<i32> {
 
 /// Borrow a string-typed cell as `&str`, or `None` if the cell is null. No
 /// allocation: `Utf8` borrows its `String`, `Binary` is validated in place
-/// (invalid UTF-8 → `None`). Replaces the old Kotlin-mirroring `kotlin_string`,
-/// which allocated a `String` per cell and encoded null as the literal `"null"`.
+/// (invalid UTF-8 → `None`).
 fn as_opt_str(v: &ScalarValue) -> Option<&str> {
     match v {
         ScalarValue::Null => None,
@@ -197,9 +189,9 @@ fn as_opt_str(v: &ScalarValue) -> Option<&str> {
 }
 
 /// Read a cell as a three-valued boolean: `None` for `NULL`, `Some(b)` for a
-/// boolean, and `Some(n == 1)` for an integer (Kotlin `toBool`'s number rule).
-/// Used by the logical `AND`/`OR` operators. In practice their operands are
-/// already Boolean columns (the results of comparisons), which may now be null.
+/// boolean, and `Some(n == 1)` for an integer. Used by the logical `AND`/`OR`
+/// operators. In practice their operands are already Boolean columns (the
+/// results of comparisons), which may now be null.
 fn as_opt_bool(v: &ScalarValue) -> Option<bool> {
     match v {
         ScalarValue::Null => None,
@@ -239,15 +231,15 @@ fn or3(l: Option<bool>, r: Option<bool>) -> Option<bool> {
 /// Generate a concrete boolean operator: a struct holding `l`/`r`, its
 /// `BooleanExpression` impl (`compare_value` is the per-cell body `$body`), the
 /// trivial `Expression` delegate to `evaluate_boolean`, and a `Display` impl
-/// rendering `"l <sym> r"`. This mirrors the Kotlin file, where each operator is
-/// a tiny class overriding one method.
+/// rendering `"l <sym> r"`. Each operator becomes a tiny struct overriding one
+/// method.
 macro_rules! boolean_op {
     // `$proto_op` is the wire-format operator name used by
     // `protobuf::serialize_physical_expr` (e.g. "eq", "neq", "and"). It is
     // distinct from `$sym` (the Display symbol like "=", "!=", "AND").
     ($name:ident, $sym:literal, $proto_op:literal,
      |$l:ident, $r:ident, $t:ident| $body:expr) => {
-        #[doc = concat!("`l ", $sym, " r`. Kotlin `", stringify!($name), "`.")]
+        #[doc = concat!("`l ", $sym, " r`.")]
         pub struct $name {
             l: Arc<dyn Expression>,
             r: Arc<dyn Expression>,
@@ -301,31 +293,65 @@ macro_rules! boolean_op {
 
 // AND / OR ignore the Arrow type and operate on the truthiness of each side,
 // using SQL Kleene three-valued logic so a NULL operand propagates correctly.
-boolean_op!(AndExpression, "AND", "and", |l, r, _t| and3(as_opt_bool(l), as_opt_bool(r)));
-boolean_op!(OrExpression,  "OR",  "or",  |l, r, _t| or3(as_opt_bool(l), as_opt_bool(r)));
+boolean_op!(AndExpression, "AND", "and", |l, r, _t| and3(
+    as_opt_bool(l),
+    as_opt_bool(r)
+));
+boolean_op!(OrExpression, "OR", "or", |l, r, _t| or3(
+    as_opt_bool(l),
+    as_opt_bool(r)
+));
 
 // Comparisons dispatch on the (shared) Arrow type via `compare_typed!`.
-boolean_op!(EqExpression,   "=",  "eq",   |l, r, t| compare_typed!(l, r, t, ==));
-boolean_op!(NeqExpression,  "!=", "neq",  |l, r, t| compare_typed!(l, r, t, !=));
-boolean_op!(LtExpression,   "<",  "lt",   |l, r, t| compare_typed!(l, r, t, <));
-boolean_op!(LtEqExpression, "<=", "lteq", |l, r, t| compare_typed!(l, r, t, <=));
-boolean_op!(GtExpression,   ">",  "gt",   |l, r, t| compare_typed!(l, r, t, >));
-boolean_op!(GtEqExpression, ">=", "gteq", |l, r, t| compare_typed!(l, r, t, >=));
+boolean_op!(
+    EqExpression,
+    "=",
+    "eq",
+    |l, r, t| compare_typed!(l, r, t, ==)
+);
+boolean_op!(
+    NeqExpression,
+    "!=",
+    "neq",
+    |l, r, t| compare_typed!(l, r, t, !=)
+);
+boolean_op!(
+    LtExpression,
+    "<",
+    "lt",
+    |l, r, t| compare_typed!(l, r, t, <)
+);
+boolean_op!(
+    LtEqExpression,
+    "<=",
+    "lteq",
+    |l, r, t| compare_typed!(l, r, t, <=)
+);
+boolean_op!(
+    GtExpression,
+    ">",
+    "gt",
+    |l, r, t| compare_typed!(l, r, t, >)
+);
+boolean_op!(
+    GtEqExpression,
+    ">=",
+    "gteq",
+    |l, r, t| compare_typed!(l, r, t, >=)
+);
 
 #[cfg(test)]
 mod tests {
-    //! Port of `kquery/physical-plan/src/test/kotlin/BooleanExpressionTest.kt`.
     //!
-    //! The Kotlin tests build their input batch with `Fuzzer().createRecordBatch`.
-    //! The `fuzzer` crate is module 9 and is not yet ported, so these tests build
-    //! the `RecordBatch` directly from typed arrow arrays — exactly what
-    //! `createRecordBatch` does internally. Each test compares the operator's
-    //! output against Rust's own `>=` over the same values, so the assertion is
-    //! self-consistent regardless of the concrete numbers chosen.
+    //! These tests build the `RecordBatch` directly from typed arrow arrays.
+    //! The `fuzzer` crate covered in module 9 is not yet implemented; once it
+    //! is, the same tests will be rewritten to use it. Each test compares the
+    //! operator's output against Rust's own `>=` over the same values, so the
+    //! assertion is self-consistent regardless of the concrete numbers chosen.
     use super::*;
     use crate::column_expression::ColumnExpression;
     use arrow_array::{
-        ArrayRef, Float64Array, Int16Array, Int32Array, Int64Array, Int8Array, StringArray,
+        ArrayRef, Float64Array, Int8Array, Int16Array, Int32Array, Int64Array, StringArray,
     };
     use arrow_schema::{Field as ArrowField, Schema as ArrowSchema};
     use datatypes::RecordBatch;
@@ -438,12 +464,13 @@ mod tests {
         // not a panic, and not `false`. The WHERE filter drops it either way.
         use crate::expressions::LiteralStringExpression;
         let a: Vec<Option<&str>> = vec![Some("CO"), None, Some("CA")];
-        let schema = Arc::new(ArrowSchema::new(vec![ArrowField::new("state", DataType::Utf8, true)]));
-        let batch = RecordBatch::try_new(
-            schema,
-            vec![Arc::new(StringArray::from(a)) as ArrayRef],
-        )
-        .unwrap();
+        let schema = Arc::new(ArrowSchema::new(vec![ArrowField::new(
+            "state",
+            DataType::Utf8,
+            true,
+        )]));
+        let batch =
+            RecordBatch::try_new(schema, vec![Arc::new(StringArray::from(a)) as ArrayRef]).unwrap();
         let expr = EqExpression::new(
             Arc::new(ColumnExpression::new(0)),
             Arc::new(LiteralStringExpression::new("CO".to_string())),
@@ -456,12 +483,17 @@ mod tests {
 
     #[test]
     fn neq_with_null_string_is_unknown_not_true() {
-        // The case the old Kotlin-mirroring code got wrong: stringify made
-        // `null != 'CO'` == `"null" != "CO"` == true, wrongly KEEPING a null row in
-        // `WHERE state != 'CO'`. SQL says NULL != 'CO' is UNKNOWN (null cell) -> drop.
+        // SQL says NULL != 'CO' is UNKNOWN (null cell) -> drop. A previous
+        // implementation that stringified both sides treated `null != 'CO'` as
+        // `"null" != "CO"` == true, which wrongly KEPT a null row in
+        // `WHERE state != 'CO'`.
         use crate::expressions::LiteralStringExpression;
         let a: Vec<Option<&str>> = vec![Some("CO"), None, Some("CA")];
-        let schema = Arc::new(ArrowSchema::new(vec![ArrowField::new("state", DataType::Utf8, true)]));
+        let schema = Arc::new(ArrowSchema::new(vec![ArrowField::new(
+            "state",
+            DataType::Utf8,
+            true,
+        )]));
         let batch =
             RecordBatch::try_new(schema, vec![Arc::new(StringArray::from(a)) as ArrayRef]).unwrap();
         let expr = NeqExpression::new(
@@ -476,8 +508,8 @@ mod tests {
 
     #[test]
     fn numeric_compare_with_null_is_unknown_not_panic() {
-        // The numeric path used to panic on a null (mirroring Kotlin's `(l as Int)`
-        // NPE). Under three-valued logic it must yield UNKNOWN instead.
+        // The numeric path used to panic on a null. Under three-valued logic
+        // it must yield UNKNOWN instead.
         let a: Vec<Option<i32>> = vec![Some(5), None, Some(20)];
         let b: Vec<Option<i32>> = vec![Some(10), Some(10), Some(10)];
         let schema = Arc::new(ArrowSchema::new(vec![

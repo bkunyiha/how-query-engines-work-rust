@@ -1,11 +1,8 @@
-//! Port of `kquery/distributed/src/main/kotlin/DistributedConfig.kt`.
-//!
-//! `ExecutorConfig` + `DistributedConfig` data classes. Pure data, no logic
-//! beyond `partition_count()` (the `getPartitionCount()` method in Kotlin).
+//! `ExecutorConfig` + `DistributedConfig` data structs. Pure data, no logic
+//! beyond `partition_count()`.
 
 /// Configuration for a single executor in the distributed cluster.
 ///
-/// Kotlin: `data class ExecutorConfig(val id: String, val host: String, val port: Int)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutorConfig {
     /// Unique identifier for this executor.
@@ -28,14 +25,10 @@ impl ExecutorConfig {
 
 /// Configuration for the distributed query execution environment.
 ///
-/// Kotlin: `data class DistributedConfig(executors, shuffleDir, defaultPartitions)`.
-/// Kotlin's parameter defaults (`shuffleDir = "/tmp/kquery-shuffle"`,
-/// `defaultPartitions = 0`) become Rust builder methods on this struct.
+/// Builder methods set defaults for the shuffle directory and partition count.
 ///
-/// ## Translation note — shuffle directory
-/// The default shuffle directory is `/tmp/rquery-shuffle` (renamed from
-/// kquery's `/tmp/kquery-shuffle` during the kquery → rquery user-visible-string
-/// sweep — see TRANSLATION_NOTES.md, Convention section).
+/// ## Shuffle directory
+/// The default shuffle directory is `/tmp/rquery-shuffle`.
 #[derive(Debug, Clone)]
 pub struct DistributedConfig {
     /// List of executors in the cluster.
@@ -48,7 +41,7 @@ pub struct DistributedConfig {
 }
 
 impl DistributedConfig {
-    /// Default shuffle directory. Renamed from kquery's `/tmp/kquery-shuffle`.
+    /// Default shuffle directory.
     pub const DEFAULT_SHUFFLE_DIR: &str = "/tmp/rquery-shuffle";
 
     /// Construct with sensible defaults — empty `shuffle_dir`,
@@ -75,7 +68,6 @@ impl DistributedConfig {
     }
 
     /// Effective partition count for shuffle operations.
-    /// Kotlin `fun getPartitionCount(): Int`: `defaultPartitions > 0` overrides;
     /// otherwise the executor count is used.
     pub fn partition_count(&self) -> i32 {
         if self.default_partitions > 0 {

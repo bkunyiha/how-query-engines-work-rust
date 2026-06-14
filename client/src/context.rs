@@ -1,4 +1,3 @@
-//! Port of `kquery/client/src/main/kotlin/Context.kt`.
 //!
 //! Interactive Flight client: same API shape as
 //! [`execution::ExecutionContext`] and [`distributed::DistributedContext`]
@@ -29,14 +28,13 @@ use sql::{PrattParser, SqlExpr, SqlParser, SqlPlanner, SqlTokenizer};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// CSV batch size for tables registered through `register_csv`. Matches
-/// `kquery/client/.../Context.kt` and the workspace's other contexts
-/// (`distributed::DistributedContext`, `execution::ExecutionContext`),
-/// which both hardcode 1024.
+/// CSV batch size for tables registered through `register_csv`. Matches the
+/// workspace's other contexts (`distributed::DistributedContext`,
+/// `execution::ExecutionContext`).
 const CSV_BATCH_SIZE: usize = 1024;
 
 /// Interactive client-side context for executing queries via a single
-/// Flight server. Kotlin `class Context(host: String, port: Int)`.
+/// Flight server.
 ///
 /// Holds the table registry (so `Context::sql` can resolve table names) and
 /// the [`Client`] that ships logical plans over the wire to the server's
@@ -59,7 +57,7 @@ impl Context {
         })
     }
 
-    /// Register a CSV file as a table. Kotlin `fun registerCsv(...)`.
+    /// Register a CSV file as a table.
     ///
     /// Mirrors `DistributedContext::register_csv` line-for-line — same
     /// `CsvDataSource::new(...)` construction, same `Scan` node, same
@@ -72,13 +70,12 @@ impl Context {
         self.register(table_name, df);
     }
 
-    /// Register a `DataFrame` as a table. Kotlin `register(tableName, df)`.
+    /// Register a `DataFrame` as a table.
     pub fn register(&mut self, table_name: &str, df: DataFrame) {
         self.tables.insert(table_name.to_string(), df);
     }
 
     /// Parse + execute a SQL query via the Flight server.
-    /// Kotlin `fun sql(sql: String): Sequence<RecordBatch>`.
     ///
     /// Identical parse pipeline to `DistributedContext::sql`: Pratt-parse
     /// the SQL, lower to `DataFrame` via `SqlPlanner`, take its logical
@@ -95,7 +92,6 @@ impl Context {
     }
 
     /// Execute a logical plan via the Flight server.
-    /// Kotlin `fun execute(plan: LogicalPlan): Sequence<RecordBatch>`.
     ///
     /// The wire shape:
     /// 1. Serialise the [`LogicalPlan`] to a [`pb::LogicalPlanNode`] via

@@ -1,67 +1,47 @@
 //! # physical-plan
 //!
-//! Physical execution plans, operators, and expression evaluation.
+//! Physical execution plans, operators, and expression evaluation. The largest
+//! module in the workspace.
 //!
-//! ## Kotlin source
-//! Faithful port of `kquery/physical-plan/src/main/kotlin/` (28 files):
-//! - **Plan node:** `PhysicalPlan.kt`
-//! - **Operators:** `ScanExec.kt`, `ProjectionExec.kt`, `SelectionExec.kt`,
-//!   `HashAggregateExec.kt`, `HashJoinExec.kt`, `LimitExec.kt`,
-//!   `ShuffleReaderExec.kt`, `ShuffleWriterExec.kt`
-//! - **Expressions:** `AggregateExpression.kt`, `AvgExpression.kt`,
-//!   `BinaryExpression.kt`, `BooleanExpression.kt`, `CastExpression.kt`,
-//!   `ColumnExpression.kt`, `CountExpression.kt`, `DateExpression.kt`,
-//!   `MathExpression.kt`, `MaxExpression.kt`, `MinExpression.kt`,
-//!   `SumExpression.kt`, `UnaryMathExpression.kt`, `Expressions.kt`
-//! - **Shuffle / task:** `AggregateMode.kt`, `Action.kt`, `Task.kt`,
-//!   `ShuffleLocation.kt`, `ShuffleManager.kt`
+//! ## What this crate provides
 //!
-//! Largest module in the workspace. Keep each generated file under
-//! 25 lines of executable code where possible — split at function boundaries.
+//! - **Plan trait** — [`PhysicalPlan`](physical_plan::PhysicalPlan): the trait
+//!   every operator implements. Has `schema()`, `children()`,
+//!   `with_new_children(...)`, `execute(&ctx)`, and `as_any()` for runtime
+//!   downcasting.
+//! - **Operators** — [`ScanExec`](scan_exec::ScanExec),
+//!   [`ProjectionExec`](projection_exec::ProjectionExec),
+//!   [`SelectionExec`](selection_exec::SelectionExec),
+//!   [`LimitExec`](limit_exec::LimitExec),
+//!   [`HashAggregateExec`](hash_aggregate_exec::HashAggregateExec),
+//!   [`HashJoinExec`](hash_join_exec::HashJoinExec),
+//!   [`ShuffleReaderExec`](shuffle_reader_exec::ShuffleReaderExec),
+//!   [`ShuffleWriterExec`](shuffle_writer_exec::ShuffleWriterExec).
+//! - **Expressions** — the [`Expression`](physical_plan::PhysicalPlan) family
+//!   covers column references, literals, binary expressions (with numeric
+//!   coercion), boolean comparisons and logical operators, arithmetic, casts,
+//!   date arithmetic, and unary math. Each expression evaluates a `RecordBatch`
+//!   into an output column.
+//! - **Aggregation** — [`AggregateExpression`](aggregate_expression),
+//!   `Min`/`Max`/`Sum`/`Count`/`Avg`, and [`AggregateMode`](aggregate_mode)
+//!   (`Partial` / `Final` / `Complete`).
+//! - **Shuffle and task** — [`Task`](task), [`ShuffleLocation`](shuffle_location),
+//!   [`ShuffleManager`](shuffle_manager) (Arrow IPC writer/reader for shuffle
+//!   files), and [`ExecutorContext`](executor_context) (per-executor identity
+//!   + shuffle storage handle that operators receive via `execute(&ctx)`).
 //!
-//! ## Status
-//! Module 6 of 15 — all four phases ported (per ARCHITECTURE.md §4.6). The only
-//! deferred pieces are the shuffle operators' context-driven execution and
-//! `ShuffleManager`'s Arrow-IPC I/O, which belong to the distributed modules (13/14).
-//! - **Phase 1 (done):** the `PhysicalPlan` and `Expression` traits, and the
-//!   simple expressions — column, literals, binary (with numeric coercion),
-//!   boolean comparisons/logical, math, and cast. `BooleanExpressionTest` and
-//!   `CastExpressionTest` are ported.
-//! - **Phase 2 (done):** the straightforward operators — `ScanExec`,
-//!   `ProjectionExec`, `SelectionExec`, `LimitExec` — execute `ScanExec →
-//!   Selection → Projection → LimitExec` end-to-end over a CSV scan. Building an
-//!   output batch from evaluated columns goes through the new
-//!   `datatypes::record_batch::create` bridge (the arrow `RecordBatch` holds
-//!   `ArrayRef`s, so virtual literal columns are materialized).
-//! - **Phase 3 (done):** the two remaining stateless scalar expressions —
-//!   `DateExpression` (date ± interval) and `UnaryMathExpression` (`Sqrt`/`Log`) —
-//!   plus the stateful aggregation core: `AggregateExpression`, the five
-//!   aggregates (`Min`/`Max`/`Sum`/`Count`/`Avg`, each with an `Accumulator`
-//!   impl), `AggregateMode`, and `HashAggregateExec` (group-by hash aggregation).
-//!   `AccumulatorValue` carries AVG's compound (sum, count) intermediate state.
-//!   `AggregateTest` (the three accumulator tests) is ported, plus a group-by
-//!   integration test over `employee.csv`.
-//! - **Phase 4 (done):** `HashJoinExec` (equi-join: build on the right, probe with
-//!   the left; `Inner`/`Left`/`Right`), reusing the shared `row_key::RowKey` hash
-//!   helper. The shuffle/task scaffolding types (`Action`/`QueryAction`/
-//!   `ShuffleIdAction`, `Task`, `ShuffleLocation`) are ported as data types. The
-//!   shuffle operators (`ShuffleReaderExec`, `ShuffleWriterExec`) and `ShuffleManager`
-//!   I/O are stubbed with `unimplemented!()` — their `execute()` requires the
-//!   distributed executor context (modules 13/15), exactly as Kotlin's `execute()`
-//!   throws and defers to `executeWithContext`/`executeAndWriteShuffle`.
+//! ## Design — traits, not enums
 //!
-//! The per-phase file inventory and what each phase does is tabulated in
-//! ARCHITECTURE.md §4.6 ("Porting phases").
-//!
-//! ## Design — traits, not enums (the documented §4.6 deviation)
 //! `PhysicalPlan` and `Expression` are Rust **traits** referenced through
-//! `Arc<dyn PhysicalPlan>` / `Arc<dyn Expression>`, *not* enums. This reverses the
-//! §3.1 "interface hierarchy → enum" rule applied to `logical_plan`, because the
-//! physical operator/expression set is large (28 files) and open in spirit. See
-//! the file-level docs and `TRANSLATION_NOTES.md` for the rationale.
+//! `Arc<dyn PhysicalPlan>` / `Arc<dyn Expression>`, *not* enums. This reverses
+//! the "closed interface → enum" rule applied to `logical_plan`, because the
+//! physical operator/expression set is large and open in spirit (adding a new
+//! operator is adding a new file, not editing a central enum).
+//! `as_any().downcast_ref::<X>()` is the standard pattern for recovering a
+//! concrete type.
 
 // ==============================================================
-// Per-file modules — one for each upstream Kotlin source file.
+// Per-file modules.
 // ==============================================================
 pub mod action;
 pub mod aggregate_expression;
@@ -73,12 +53,11 @@ pub mod cast_expression;
 pub mod column_expression;
 pub mod count_expression;
 pub mod date_expression;
-// `executor_context.rs` has no Kotlin counterpart in this directory — it
-// bundles the four constructor params of Kotlin's `KQueryFlightProducer`
-// (executorId/host/port + shuffleManager) into a single value, so the
-// shuffle operators (Batches B/C) take one parameter instead of four.
-// See `ARCHITECTURE.md` §1.5 for the Phase 2 plan to move this struct
-// to `flight-server` alongside `ShuffleManager`.
+// `executor_context.rs` bundles the per-executor identity
+// (executor_id / host / port) with the shuffle storage handle (Arc<ShuffleManager>)
+// into a single value that operators receive through `execute(&ctx)`. Placement
+// here in `physical-plan/` is forced by the dependency graph (every other
+// candidate crate transitively depends on this one).
 pub mod executor_context;
 pub mod expressions;
 pub mod hash_aggregate_exec;
@@ -99,9 +78,9 @@ pub mod sum_expression;
 pub mod task;
 pub mod unary_math_expression;
 
-// Internal helper with no Kotlin counterpart: a float-aware hashable row key,
-// used by `HashJoinExec` for its join keys (and the same shape `HashAggregateExec`
-// uses for group keys). See `row_key.rs` and ARCHITECTURE.md §4.6.
+// Internal helper: a float-aware hashable row key used by `HashJoinExec` for
+// its join keys (and the same shape `HashAggregateExec` uses for group keys).
+// See `row_key.rs`.
 mod row_key;
 
 // ==============================================================
@@ -122,7 +101,7 @@ pub use expressions::{
 pub use math_expression::{
     AddExpression, DivideExpression, MathExpression, MultiplyExpression, SubtractExpression,
 };
-pub use physical_plan::{format, PhysicalPlan};
+pub use physical_plan::{PhysicalPlan, format};
 // Phase-2 operators.
 pub use limit_exec::LimitExec;
 pub use projection_exec::ProjectionExec;
@@ -148,6 +127,6 @@ pub use shuffle_manager::ShuffleManager;
 pub use shuffle_reader_exec::ShuffleReaderExec;
 pub use shuffle_writer_exec::ShuffleWriterExec;
 pub use task::Task;
-// Module 13 scaffolding — consumed by flight-server (Batches D/E) and the
-// shuffle operator bodies (Batches B/C).
+// Executor context — consumed by flight-server and the shuffle operator
+// bodies.
 pub use executor_context::ExecutorContext;

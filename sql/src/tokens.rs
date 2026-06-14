@@ -1,29 +1,17 @@
-//! Port of `kquery/sql/src/main/kotlin/Tokens.kt`.
+//! The token vocabulary: a `TokenType` enum wrapping three sub-enums
+//! — `Literal`, `Keyword`, and `Symbol` — plus the `Token` value type.
 //!
-//! The token vocabulary: a `TokenType` (Kotlin's marker `interface TokenType`)
-//! implemented by three enums — `Literal`, `Keyword`, and `Symbol` — plus the
-//! `Token` value type.
-//!
-//! ## Translation notes
-//! - Kotlin's marker `interface TokenType` implemented by three `enum class`es
-//!   becomes a Rust `enum TokenType` wrapping the three sub-enums (per the
-//!   interface-hierarchy → enum rule, §3.1; here the implementors are themselves
-//!   enums, so each is wrapped in a variant).
-//! - Kotlin enum *constants* are `SCREAMING_CASE`; Rust enum *variants* are
-//!   `PascalCase` (Rust convention, §3.0). `Keyword.SELECT` → `Keyword::Select`,
-//!   `Symbol.LEFT_PAREN` → `Symbol::LeftParen`, etc. The canonical upper-case
-//!   spelling is preserved as the string returned by `Keyword::name` and matched
-//!   by `Keyword::text_of`.
-//! - Kotlin builds its keyword / symbol lookup tables by reflection
-//!   (`values().associateBy(...)`). Rust has no enum reflection, so the
-//!   `define_keywords!` / `define_symbols!` macros declare the enum *and* its
-//!   string lookup tables from a single list — one source of truth, no
+//! ## Notes
+//! - Enum variants use `PascalCase` (Rust convention, §3.0). The canonical
+//!   upper-case spelling is preserved as the string returned by
+//!   `Keyword::name` and matched by `Keyword::text_of`.
+//! - The `define_keywords!` / `define_symbols!` macros declare each enum *and*
+//!   its string lookup tables from a single list — one source of truth, no
 //!   reflection, no external crate.
 
 use std::fmt;
 
-/// Marker for the kind of a token. Kotlin: `interface TokenType` implemented by
-/// `Literal`, `Keyword`, and `Symbol`.
+/// Marker for the kind of a token: `Literal`, `Keyword`, or `Symbol`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenType {
     Keyword(Keyword),
@@ -31,7 +19,7 @@ pub enum TokenType {
     Literal(Literal),
 }
 
-/// Literal token kinds. Kotlin: `enum class Literal : TokenType`.
+/// Literal token kinds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Literal {
     Long,
@@ -41,48 +29,42 @@ pub enum Literal {
 }
 
 impl Literal {
-    /// Kotlin: `Literal.isNumberStart`.
     pub fn is_number_start(ch: char) -> bool {
         ch.is_ascii_digit() || ch == '.'
     }
 
-    /// Kotlin: `Literal.isIdentifierStart`.
     pub fn is_identifier_start(ch: char) -> bool {
         ch.is_alphabetic() || ch == '`'
     }
 
-    /// Kotlin: `Literal.isIdentifierPart`.
     pub fn is_identifier_part(ch: char) -> bool {
         ch.is_alphabetic() || ch.is_ascii_digit() || ch == '_'
     }
 
-    /// Kotlin: `Literal.isCharsStart`.
     pub fn is_chars_start(ch: char) -> bool {
         ch == '\'' || ch == '"'
     }
 }
 
 /// Declares the `Keyword` enum together with its `name` / `text_of` lookup,
-/// from a single `Variant => "CANONICAL"` list. Replaces Kotlin's reflective
-/// `values().associateBy(Keyword::name)`.
+/// from a single `Variant => "CANONICAL"` list.
 macro_rules! define_keywords {
     ($($variant:ident => $text:literal),+ $(,)?) => {
-        /// SQL keyword tokens. Kotlin: `enum class Keyword : TokenType`.
+        /// SQL keyword tokens.
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         pub enum Keyword {
             $($variant),+
         }
 
         impl Keyword {
-            /// The canonical upper-case spelling. Kotlin: `Keyword.name`.
+            /// The canonical upper-case spelling.
             pub fn name(&self) -> &'static str {
                 match self {
                     $(Keyword::$variant => $text),+
                 }
             }
 
-            /// Look up a keyword by text, case-insensitively. Kotlin:
-            /// `Keyword.textOf(text)`.
+            /// Look up a keyword by text, case-insensitively.
             pub fn text_of(text: &str) -> Option<Keyword> {
                 match text.to_uppercase().as_str() {
                     $($text => Some(Keyword::$variant),)+
@@ -169,11 +151,10 @@ define_keywords! {
 }
 
 /// Declares the `Symbol` enum together with its `text` / `text_of` / `is_symbol`
-/// helpers, from a single `Variant => "text"` list. Replaces Kotlin's reflective
-/// `values().associateBy(Symbol::text)` and `symbolStartSet`.
+/// helpers, from a single `Variant => "text"` list.
 macro_rules! define_symbols {
     ($($variant:ident => $text:literal),+ $(,)?) => {
-        /// SQL symbol/operator tokens. Kotlin: `enum class Symbol(val text) : TokenType`.
+        /// SQL symbol/operator tokens.
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         pub enum Symbol {
             $($variant),+
@@ -183,14 +164,14 @@ macro_rules! define_symbols {
             /// Every symbol variant, used for the `is_symbol` character scan.
             pub const ALL: &'static [Symbol] = &[$(Symbol::$variant),+];
 
-            /// The symbol's text. Kotlin: `Symbol.text`.
+            /// The symbol's text.
             pub fn text(&self) -> &'static str {
                 match self {
                     $(Symbol::$variant => $text),+
                 }
             }
 
-            /// Look up a symbol by its exact text. Kotlin: `Symbol.textOf(text)`.
+            /// Look up a symbol by its exact text.
             pub fn text_of(text: &str) -> Option<Symbol> {
                 match text {
                     $($text => Some(Symbol::$variant),)+
@@ -198,13 +179,11 @@ macro_rules! define_symbols {
                 }
             }
 
-            /// Whether `ch` can appear in a symbol (Kotlin's `symbolStartSet`
-            /// membership). Kotlin: `Symbol.isSymbol`.
+            /// Whether `ch` can appear in a symbol.
             pub fn is_symbol(ch: char) -> bool {
                 Self::ALL.iter().any(|s| s.text().contains(ch))
             }
 
-            /// Kotlin: `Symbol.isSymbolStart` (delegates to `isSymbol`).
             pub fn is_symbol_start(ch: char) -> bool {
                 Self::is_symbol(ch)
             }
@@ -223,7 +202,7 @@ define_symbols! {
     DoubleGt => ">>", At => "@", Pound => "#",
 }
 
-/// A scanned token. Kotlin: `data class Token(text, type, endOffset)`.
+/// A scanned token.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
     pub text: String,
@@ -233,18 +212,26 @@ pub struct Token {
 
 impl Token {
     pub fn new(text: impl Into<String>, token_type: TokenType, end_offset: usize) -> Self {
-        Self { text: text.into(), token_type, end_offset }
+        Self {
+            text: text.into(),
+            token_type,
+            end_offset,
+        }
     }
 }
 
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Kotlin prints e.g. `Token("SELECT", Keyword.SELECT, 6)`.
+        // Prints e.g. `Token("SELECT", Keyword.SELECT, 6)`.
         let (category, name) = match &self.token_type {
             TokenType::Keyword(k) => ("Keyword", k.name().to_string()),
             TokenType::Symbol(s) => ("Symbol", format!("{s:?}")),
             TokenType::Literal(l) => ("Literal", format!("{l:?}")),
         };
-        write!(f, "Token(\"{}\", {category}.{name}, {})", self.text, self.end_offset)
+        write!(
+            f,
+            "Token(\"{}\", {category}.{name}, {})",
+            self.text, self.end_offset
+        )
     }
 }

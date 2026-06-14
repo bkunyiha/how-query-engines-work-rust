@@ -1,6 +1,6 @@
 [package]
 name         = "physical-plan"
-description  = "PhysicalPlan, *Exec operators, physical Expression types, shuffle/task. Rust port of kquery/physical-plan."
+description  = "PhysicalPlan, *Exec operators, physical Expression types, shuffle/task."
 edition.workspace      = true
 license.workspace      = true
 version.workspace      = true
@@ -16,7 +16,6 @@ rust-version.workspace = true
 # error. Matching what logical-plan / sql already do.
 arrow-schema  = { workspace = true }
 # `arrow-ipc` powers `ShuffleManager`'s local Arrow IPC file writer/reader.
-# Same shape as kquery's `ArrowFileWriter` / `ArrowFileReader` calls.
 arrow-ipc     = { workspace = true }
 datatypes     = { path = "../datatypes" }
 datasource    = { path = "../datasource" }
@@ -24,7 +23,7 @@ logical-plan  = { path = "../logical-plan" }
 
 [dev-dependencies]
 # Tests build RecordBatches directly from typed arrow arrays (Int32Array, …)
-# because the `fuzzer` crate (module 9) that the Kotlin tests use is not yet
-# ported. Only the tests touch arrow-array directly; the operators go through
-# the `datatypes` builder/vector layer.
+# rather than going through the `fuzzer` crate. Only the tests touch
+# arrow-array directly; the operators go through the `datatypes`
+# builder/vector layer.
 arrow-array   = { workspace = true }

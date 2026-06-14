@@ -1,4 +1,3 @@
-//! Port of `kquery/logical-plan/src/main/kotlin/Projection.kt`.
 //!
 //! Logical plan representing a projection (evaluating a list of expressions)
 //! against an input.
@@ -16,7 +15,10 @@ pub struct Projection {
 
 impl Projection {
     pub fn new(input: LogicalPlan, expr: Vec<LogicalExpr>) -> Self {
-        Self { input: Box::new(input), expr }
+        Self {
+            input: Box::new(input),
+            expr,
+        }
     }
 
     pub fn schema(&self) -> Schema {

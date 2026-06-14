@@ -1,4 +1,3 @@
-//! Port of `kquery/physical-plan/src/main/kotlin/ScanExec.kt`.
 //!
 //! Scans a data source with an optional push-down projection. It is the only leaf
 //! operator: it has no child plan and produces its batches by delegating to the
@@ -13,7 +12,6 @@ use std::fmt;
 use std::sync::Arc;
 
 /// Scan a data source with optional push-down projection.
-/// Kotlin `ScanExec(val ds: DataSource, val projection: List<String>)`.
 ///
 /// `ds` is held as `Arc<dyn DataSource>` (matching the logical `Scan` operator),
 /// so the same source can be shared across plan nodes.
@@ -30,7 +28,6 @@ impl ScanExec {
 
 impl PhysicalPlan for ScanExec {
     fn schema(&self) -> Schema {
-        // Kotlin: `ds.schema().select(projection)`.
         self.ds.schema().select(&self.projection)
     }
 
@@ -63,14 +60,16 @@ impl PhysicalPlan for ScanExec {
         self: Arc<Self>,
         children: Vec<Arc<dyn PhysicalPlan>>,
     ) -> Arc<dyn PhysicalPlan> {
-        assert!(children.is_empty(), "ScanExec is a leaf and expects no children");
+        assert!(
+            children.is_empty(),
+            "ScanExec is a leaf and expects no children"
+        );
         self
     }
 }
 
 impl fmt::Display for ScanExec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Kotlin: "ScanExec: schema=${schema()}, projection=$projection".
         // The datatypes `Schema` has no `Display`, so use its `Debug` form.
         write!(
             f,

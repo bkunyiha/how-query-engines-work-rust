@@ -1,14 +1,12 @@
-//! Port of `kquery/physical-plan/src/main/kotlin/expressions/ColumnExpression.kt`.
 //!
 //! References a column in the input batch by its position. Evaluating it simply
 //! hands back that column unchanged — the simplest possible physical expression.
 
 use crate::expressions::Expression;
-use datatypes::{record_batch, ColumnVector, RecordBatch};
+use datatypes::{ColumnVector, RecordBatch, record_batch};
 use std::fmt;
 
-/// Reference a column in a batch by index. Kotlin `ColumnExpression(val i: Int)`
-/// (`Int` → `usize`, since it is an index).
+/// Reference a column in a batch by index.
 pub struct ColumnExpression {
     pub i: usize,
 }
@@ -21,8 +19,8 @@ impl ColumnExpression {
 
 impl Expression for ColumnExpression {
     fn evaluate(&self, input: &RecordBatch) -> Box<dyn ColumnVector> {
-        // Kotlin: `return input.field(i)`. `record_batch::field` wraps the
-        // existing arrow `ArrayRef` (cheap, Arc-cloned) as a ColumnVector.
+        // `record_batch::field` wraps the existing arrow `ArrayRef`
+        // (cheap, Arc-cloned) as a ColumnVector.
         Box::new(record_batch::field(input, self.i))
     }
 

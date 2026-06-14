@@ -1,16 +1,12 @@
-//! Port of `kquery/datatypes/src/main/kotlin/LiteralValueVector.kt`.
 //!
 //! Represents a literal value as if it were a column — every row returns the
 //! same value. Used in expression evaluation when comparing column values to
 //! constants.
 //!
 //! Translation notes:
-//! - Kotlin `class LiteralValueVector(val arrowType: ArrowType, val value: Any?, val size: Int)`
 //!   → Rust struct with `arrow_type`, `value: ScalarValue`, `size`. The `Any?`
 //!   becomes `ScalarValue` per [`crate::scalar_value`] (which carries its own
 //!   `Null` variant in place of `?` nullability).
-//! - Kotlin `throw IndexOutOfBoundsException()` becomes `panic!()`.
-//! - Kotlin `close()` is empty in the original (literals own no resources);
 //!   Rust's `Drop` is also a no-op by default. Nothing to port.
 
 use crate::{column_vector::ColumnVector, scalar_value::ScalarValue};
@@ -19,13 +15,17 @@ use arrow_schema::DataType;
 /// A column whose every row returns the same literal value.
 pub struct LiteralValueVector {
     pub arrow_type: DataType,
-    pub value:      ScalarValue,
-    pub size:       usize,
+    pub value: ScalarValue,
+    pub size: usize,
 }
 
 impl LiteralValueVector {
     pub fn new(arrow_type: DataType, value: ScalarValue, size: usize) -> Self {
-        Self { arrow_type, value, size }
+        Self {
+            arrow_type,
+            value,
+            size,
+        }
     }
 }
 

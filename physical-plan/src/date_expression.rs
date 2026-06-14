@@ -1,17 +1,16 @@
-//! Port of `kquery/physical-plan/src/main/kotlin/expressions/DateExpression.kt`.
 //!
 //! Add or subtract an interval (a whole number of days) to/from a date,
 //! producing a date. Dates and day-intervals are both stored as integers (days
 //! since the Unix epoch / a count of days), so the arithmetic is plain integer
 //! add/subtract on the day counts, with a null in either operand yielding null.
 
-use crate::expressions::{number_to_i64, Expression};
+use crate::expressions::{Expression, number_to_i64};
 use datatypes::arrow_types::DATE_DAY_TYPE;
 use datatypes::{ArrowVectorBuilder, ColumnVector, RecordBatch, ScalarValue};
 use std::fmt;
 use std::sync::Arc;
 
-/// `date - interval` → date. Kotlin `DateSubtractIntervalExpression`.
+/// `date - interval` → date.
 pub struct DateSubtractIntervalExpression {
     pub date_expr: Arc<dyn Expression>,
     pub interval_expr: Arc<dyn Expression>,
@@ -42,7 +41,7 @@ impl fmt::Display for DateSubtractIntervalExpression {
     }
 }
 
-/// `date + interval` → date. Kotlin `DateAddIntervalExpression`.
+/// `date + interval` → date.
 pub struct DateAddIntervalExpression {
     pub date_expr: Arc<dyn Expression>,
     pub interval_expr: Arc<dyn Expression>,
@@ -90,7 +89,6 @@ fn date_interval(
         if date_value.is_null() || interval_value.is_null() {
             builder.append_null();
         } else {
-            // Kotlin: `(dateValue as Number).toInt()` and `(intervalValue as Number).toLong().toInt()`.
             let date_days = number_to_i64(&date_value) as i32;
             let interval_days = number_to_i64(&interval_value) as i32;
             builder.append_value(&ScalarValue::Date32(op(date_days, interval_days)));

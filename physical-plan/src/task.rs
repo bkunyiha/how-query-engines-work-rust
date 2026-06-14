@@ -1,15 +1,14 @@
-//! Port of `kquery/physical-plan/src/main/kotlin/Task.kt`.
 //!
 //! A unit of distributed work: a physical plan to run for one partition of one
-//! stage of a job. Scaffolding for the `distributed` module. The Kotlin source
-//! keeps the equivalent protobuf message as a comment; we preserve it.
+//! stage of a job. Scaffolding for the `distributed` module. The equivalent
+//! protobuf message is kept as a comment below.
 //!
-//! ## Translation note — `Arc<dyn PhysicalPlan>` for the plan field
+//! ## `Arc<dyn PhysicalPlan>` for the plan field
 //! Plans are passed as `Arc<dyn PhysicalPlan>` throughout the workspace —
-//! matches DataFusion's `Arc<dyn ExecutionPlan>` shape. `Task` happens to be
-//! the one place where it matters most: `Scheduler::execute_stage` builds N
-//! tasks per partition that all share the same stage plan, and Arc-cloning
-//! is what makes that share cheap (refcount bump, no plan-tree clone).
+//! matches DataFusion's `Arc<dyn ExecutionPlan>` shape. `Task` is the one
+//! place where it matters most: `Scheduler::execute_stage` builds N tasks per
+//! partition that all share the same stage plan, and Arc-cloning is what
+//! makes that share cheap (refcount bump, no plan-tree clone).
 //!
 //! No `Clone`/`Debug`/`PartialEq` derives — deriving `Debug` would require
 //! `dyn PhysicalPlan: Debug`, which we deliberately don't require (operators
@@ -30,7 +29,7 @@ use std::sync::Arc;
  }
 */
 
-/// A distributed task. Kotlin `data class Task(jobUuid, stageId, taskId, partitionId, plan)`.
+/// A distributed task.
 pub struct Task {
     pub job_uuid: String,
     pub stage_id: i32,

@@ -1,6 +1,6 @@
 [package]
 name         = "protobuf"
-description  = "PhysicalPlan / LogicalExpr / Action protobuf serialization. Rust port of kquery/protobuf."
+description  = "PhysicalPlan / LogicalExpr / Action protobuf serialization."
 edition.workspace      = true
 license.workspace      = true
 version.workspace      = true

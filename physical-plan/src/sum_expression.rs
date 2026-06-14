@@ -1,15 +1,10 @@
-//! Port of `kquery/physical-plan/src/main/kotlin/expressions/SumExpression.kt`.
 //!
 //! `SUM(expr)` — running total of non-null values.
 //!
-//! ## Translation note — output type stability
-//! Kotlin's `SumAccumulator` adds with the JVM's numeric operators, so a `Byte`
-//! sum promotes to `Int` after the first addition (`Byte + Byte → Int`). The Rust
-//! port keeps the **input type stable** (`Int8 + Int8 → Int8`, wrapping) because
-//! that matches arrow's typed columns and avoids a per-row type change. The two
-//! differ only for `Int8`/`Int16` inputs, which neither `AggregateTest` nor any
-//! realistic schema sums; `Int32`/`Int64`/`Float64` (the common cases) are
-//! unaffected.
+//! ## Output type stability
+//! Addition preserves the input type (`Int8 + Int8 → Int8`, wrapping on overflow),
+//! which matches arrow's typed columns and avoids a per-row type change.
+//! `Int32`/`Int64`/`Float64` — the common cases for summation — are unaffected.
 
 use crate::aggregate_expression::AggregateExpression;
 use crate::expressions::{Accumulator, AccumulatorValue, Expression};
@@ -17,7 +12,7 @@ use datatypes::ScalarValue;
 use std::fmt;
 use std::sync::Arc;
 
-/// `SUM(expr)`. Kotlin `SumExpression`.
+/// `SUM(expr)`.
 pub struct SumExpression {
     expr: Arc<dyn Expression>,
 }
@@ -46,7 +41,7 @@ impl fmt::Display for SumExpression {
     }
 }
 
-/// Keeps the running sum. Kotlin `SumAccumulator`.
+/// Keeps the running sum.
 pub struct SumAccumulator {
     value: ScalarValue,
 }
@@ -82,15 +77,15 @@ impl Accumulator for SumAccumulator {
     }
 
     fn merge(&mut self, other: &AccumulatorValue) {
-        // Kotlin: "merge is the same as accumulate" for SUM.
+        // For SUM, merging a partial state is the same as accumulating it.
         if let AccumulatorValue::Scalar(v) = other {
             self.accumulate(v);
         }
     }
 }
 
-/// Add two same-typed numeric scalars (integers wrap, like the JVM). Panics on a
-/// type SUM doesn't support — Kotlin's `UnsupportedOperationException`.
+/// Add two same-typed numeric scalars (integers wrap on overflow). Panics on a
+/// type SUM doesn't support.
 fn scalar_add(a: &ScalarValue, b: &ScalarValue) -> ScalarValue {
     use ScalarValue::*;
     match (a, b) {

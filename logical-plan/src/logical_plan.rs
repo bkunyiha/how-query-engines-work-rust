@@ -1,10 +1,9 @@
-//! Port of `kquery/logical-plan/src/main/kotlin/LogicalPlan.kt`.
 //!
-//! Kotlin declared `interface LogicalPlan { schema(); children() }` plus a
-//! top-level `fun format(plan, indent)`. The interface's six implementors
-//! (`Scan`, `Projection`, `Selection`, `Aggregate`, `Join`, `Limit`) collapse
-//! into the `LogicalPlan` enum below; `schema` / `children` / `Display`
-//! dispatch to the per-operator structs that live in their own files.
+//! The six logical operator variants — `Scan`, `Projection`, `Selection`,
+//! `Aggregate`, `Join`, `Limit` — are collected into the `LogicalPlan` enum
+//! below; `schema` / `children` / `Display` dispatch to the per-operator
+//! structs that live in their own files. The free function [`format`]
+//! produces an indented tree rendering.
 
 use crate::aggregate::Aggregate;
 use crate::join::Join;
@@ -51,15 +50,15 @@ impl LogicalPlan {
         }
     }
 
-    /// Human-readable, indented tree form. Kotlin `LogicalPlan.pretty()`.
+    /// Human-readable, indented tree form.
     pub fn pretty(&self) -> String {
         format(self)
     }
 }
 
 impl fmt::Display for LogicalPlan {
-    /// Single-line description of this node (Kotlin's per-class `toString`);
-    /// the tree form is produced by [`format`].
+    /// Single-line description of this node; the tree form is produced by
+    /// [`format`].
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             LogicalPlan::Scan(p) => write!(f, "{p}"),
@@ -72,7 +71,7 @@ impl fmt::Display for LogicalPlan {
     }
 }
 
-/// Format a logical plan in human-readable form. Kotlin: `fun format(plan, indent = 0)`.
+/// Format a logical plan in human-readable form.
 pub fn format(plan: &LogicalPlan) -> String {
     format_indent(plan, 0)
 }
@@ -151,10 +150,8 @@ mod tests {
         let aggregate_expr = vec![max(cast(col("salary"), INT32_TYPE))];
         let plan = LogicalPlan::Aggregate(Aggregate::new(scan, group_expr, aggregate_expr));
 
-        // NOTE: the upstream Kotlin asserts `Int(32, true)` because JVM Arrow's
-        // `ArrowType.Int(32, true).toString()` renders that way. arrow-rs's
-        // `DataType::Int32` renders as `Int32` via `Debug`, so the cast prints
-        // `CAST(#salary AS Int32)`. Same semantics, different type-name string.
+        // arrow-rs's `DataType::Int32` renders as `Int32` via `Debug`, so the
+        // cast prints `CAST(#salary AS Int32)`.
         assert_eq!(
             format(&plan),
             "Aggregate: groupExpr=[#state], aggregateExpr=[MAX(CAST(#salary AS Int32))]\n\

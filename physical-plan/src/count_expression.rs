@@ -1,15 +1,14 @@
-//! Port of `kquery/physical-plan/src/main/kotlin/expressions/CountExpression.kt`.
 //!
 //! `COUNT(expr)` — number of non-null values. Always returns an `Int32` (the
 //! count is `0` for an empty/all-null group, never null).
 
 use crate::aggregate_expression::AggregateExpression;
-use crate::expressions::{number_to_i64, Accumulator, AccumulatorValue, Expression};
+use crate::expressions::{Accumulator, AccumulatorValue, Expression, number_to_i64};
 use datatypes::ScalarValue;
 use std::fmt;
 use std::sync::Arc;
 
-/// `COUNT(expr)`. Kotlin `CountExpression`.
+/// `COUNT(expr)`.
 pub struct CountExpression {
     expr: Arc<dyn Expression>,
 }
@@ -38,7 +37,7 @@ impl fmt::Display for CountExpression {
     }
 }
 
-/// Counts non-null values. Kotlin `CountAccumulator` (`var count: Int = 0`).
+/// Counts non-null values.
 pub struct CountAccumulator {
     count: i32,
 }
@@ -67,7 +66,7 @@ impl Accumulator for CountAccumulator {
     }
 
     fn merge(&mut self, other: &AccumulatorValue) {
-        // Kotlin: COUNT merge adds the partial counts together.
+        // COUNT merges by adding the partial counts together.
         if let AccumulatorValue::Scalar(s) = other {
             if !s.is_null() {
                 self.count += number_to_i64(s) as i32;

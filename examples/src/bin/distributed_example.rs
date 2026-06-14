@@ -1,30 +1,28 @@
-//! Port of `kquery/examples/src/main/kotlin/DistributedExample.kt` — single-process
-//! distributed-shape demo using a `LocalExecutorClient`.
+//! Single-process distributed-shape demo using a `LocalExecutorClient`.
 //!
 //! ## What this shows
 //!
-//! How a query is split into stages and how tasks are distributed across executors,
-//! *without* requiring a real flight-server. Everything runs in one process. The
-//! `LocalExecutorClient` plays the role of the transport: it satisfies the
-//! `ExecutorClient` trait by running each task directly against a shared in-process
-//! `ExecutorContext`. The same `ShuffleManager` is used for writes and reads, so
-//! stage 0 writes shuffle files and stage 1 reads them out of the same directory.
+//! How a query is split into stages and how tasks are distributed across
+//! executors, *without* requiring a real flight-server. Everything runs in
+//! one process. The `LocalExecutorClient` plays the role of the transport:
+//! it satisfies the `ExecutorClient` trait by running each task directly
+//! against a shared in-process `ExecutorContext`. The same `ShuffleManager`
+//! is used for writes and reads, so stage 0 writes shuffle files and
+//! stage 1 reads them out of the same directory.
 //!
 //! The cluster config lists three executor entries — these are *descriptors*
-//! (id/host/port) that the scheduler uses to round-robin tasks. Because every
-//! call lands on the same in-process `LocalExecutorClient`, the descriptors are
-//! purely cosmetic for this demo. The sibling `distributed_flight_example`
-//! binary spawns a real flight-server and uses the descriptors as real network
-//! addresses.
+//! (id/host/port) that the scheduler uses to round-robin tasks. Because
+//! every call lands on the same in-process `LocalExecutorClient`, the
+//! descriptors are purely cosmetic for this demo. The sibling
+//! `distributed_flight_example` binary spawns a real flight-server and uses
+//! the descriptors as real network addresses.
 //!
-//! ## How this differs from kquery
+//! ## Why this works end-to-end
 //!
-//! kquery's own `DistributedExample.kt` has the same structure but doesn't
-//! actually work end-to-end — its `LocalExecutorClient.executeFinalTask` calls
-//! `task.plan.execute()` which crashes on `ShuffleReaderExec` (the Kotlin trait
-//! method throws `UnsupportedOperationException`). rquery's `PhysicalPlan::execute`
-//! takes `&ExecutorContext` as a trait-method parameter, so the same call works:
-//! the context flows through every operator in the plan tree including the reader.
+//! `PhysicalPlan::execute` takes `&ExecutorContext` as a trait-method
+//! parameter, so `task.plan.execute(&ctx)` works for any plan tree
+//! including one with a `ShuffleReaderExec`: the context flows through
+//! every operator including the reader.
 //!
 //! ## How to run
 //!
@@ -32,8 +30,9 @@
 //! cd examples && cargo run --bin distributed_example
 //! ```
 //!
-//! The `testdata/employee.csv` path is relative to the `examples/` crate directory,
-//! matching the convention used by the other example binaries in this crate.
+//! The `testdata/employee.csv` path is relative to the `examples/` crate
+//! directory, matching the convention used by the other example binaries
+//! in this crate.
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -61,7 +60,10 @@ fn main() {
     ])
     .with_default_partitions(3);
 
-    println!("Configured cluster with {} executors:", config.executors.len());
+    println!(
+        "Configured cluster with {} executors:",
+        config.executors.len()
+    );
     for e in &config.executors {
         println!("  - {} at {}:{}", e.id, e.host, e.port);
     }
@@ -97,10 +99,8 @@ fn main() {
 /// the scheduler is logged but otherwise ignored — every task runs in-process
 /// against the same shuffle manager.
 ///
-/// This is the rquery equivalent of kquery's `LocalExecutorClient` in
-/// `DistributedExample.kt`. The key difference is that this one *actually works*
-/// end-to-end for aggregate queries, because `PhysicalPlan::execute(&ctx)` flows
-/// the context through `ShuffleReaderExec`.
+/// Works end-to-end for aggregate queries because `PhysicalPlan::execute(&ctx)`
+/// flows the context through `ShuffleReaderExec`.
 struct LocalExecutorClient {
     /// Single shared executor context. All tasks see the same `executor_id`
     /// (`"local-executor"`) and the same `Arc<ShuffleManager>`, so every
@@ -139,7 +139,6 @@ impl ExecutorClient for LocalExecutorClient {
             writer.write_shuffle(&self.ctx)
         } else {
             // Non-shuffle intermediate stage — drain and return no locations.
-            // Mirrors kquery's `else` branch in `LocalExecutorClient.executeTask`.
             task.plan.execute(&self.ctx).for_each(|_| {});
             Vec::new()
         }
@@ -159,8 +158,7 @@ impl ExecutorClient for LocalExecutorClient {
         // `ShuffleReaderExec` whose `shuffle_locations` were populated by
         // `DistributedPlanner::update_shuffle_locations`. `execute(&ctx)`
         // flows the context through the aggregate to the reader, which
-        // reads via `ctx.shuffle_manager.read_partition(...)`. This is the
-        // call that *does not work* in kquery — see the module docs.
+        // reads via `ctx.shuffle_manager.read_partition(...)`.
         task.plan.execute(&self.ctx)
     }
 

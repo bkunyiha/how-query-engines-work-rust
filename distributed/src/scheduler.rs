@@ -1,5 +1,3 @@
-//! Port of `kquery/distributed/src/main/kotlin/Scheduler.kt`.
-//!
 //! Defines [`ExecutorClient`] — the trait that abstracts the Arrow Flight
 //! transport — and [`Scheduler`], which orchestrates stage-by-stage execution
 //! of a distributed query plan.
@@ -7,16 +5,16 @@
 //! ## Shape — sequential by design
 //! Stages run in dependency order; tasks within a stage are dispatched
 //! one-at-a-time round-robin across executors. No async, no Tokio, no rayon.
-//! This matches kquery's deliberate simplicity (the module is a teaching
-//! artifact, not a production scheduler). Concurrency lives one layer up at
-//! the Flight boundary (`flight-server` / `client`).
+//! The scheduler is intentionally simple — a teaching artifact, not a
+//! production scheduler. Concurrency lives one layer up at the Flight
+//! boundary (`flight-server` / `client`).
 //!
-//! ## Translation note — `ExecutorClient` is the seam to Flight
+//! ## `ExecutorClient` is the seam to Flight
 //! The trait has three methods (`execute_task`, `execute_final_task`,
 //! `fetch_shuffle`); this crate ships the trait but not a real implementation.
-//! `MockExecutorClient` in tests proves the scheduler is exercisable without
-//! Flight. The real implementation lands with module 13 (`flight-server` /
-//! `client`).
+//! A test-only `MockExecutorClient` proves the scheduler is exercisable
+//! without Flight. The real implementation lives in `flight-server` /
+//! `client`.
 
 use crate::{DistributedConfig, DistributedPlanner, ExecutorConfig, QueryStage};
 use datatypes::RecordBatch;
@@ -27,7 +25,6 @@ use tracing::{debug, info};
 use uuid::Uuid;
 
 /// Abstraction boundary between [`Scheduler`] and the Arrow Flight transport.
-/// Kotlin `interface ExecutorClient`.
 ///
 /// The scheduler talks to remote executors only through this trait, so it can
 /// be unit-tested against an in-process mock (see `SchedulerTest`). The real
@@ -62,7 +59,6 @@ pub trait ExecutorClient: Send + Sync {
 }
 
 /// Coordinates distributed query execution across executors.
-/// Kotlin `class Scheduler`.
 ///
 /// Generic over `C: ExecutorClient` so callers can plug in a mock client in
 /// tests without boxing.
@@ -82,18 +78,14 @@ impl<C: ExecutorClient> Scheduler<C> {
     }
 
     /// Execute a physical plan and stream the result batches.
-    /// Kotlin: `fun execute(plan: PhysicalPlan): Sequence<RecordBatch>`.
-    pub fn execute(
-        &self,
-        plan: Arc<dyn PhysicalPlan>,
-    ) -> Box<dyn Iterator<Item = RecordBatch>> {
+    pub fn execute(&self, plan: Arc<dyn PhysicalPlan>) -> Box<dyn Iterator<Item = RecordBatch>> {
         let job_uuid = Uuid::new_v4().to_string();
         info!("Starting job {}", job_uuid);
 
         let mut stages: Vec<QueryStage> = self.planner.plan(plan, &job_uuid);
         info!("Job {} has {} stages", job_uuid, stages.len());
 
-        // Sort by stage_id (Kotlin: `stages.sortedBy { it.stageId }`).
+        // Sort by stage_id.
         stages.sort_by_key(|s| s.stage_id);
 
         // Shuffle locations produced by each completed intermediate stage.
@@ -125,7 +117,8 @@ impl<C: ExecutorClient> Scheduler<C> {
             // If this stage has dependency input, rewrite its plan to point at
             // the actual shuffle locations.
             let updated_stage: QueryStage = if !input_locations.is_empty() {
-                self.planner.update_shuffle_locations(stage, input_locations)
+                self.planner
+                    .update_shuffle_locations(stage, input_locations)
             } else {
                 stage
             };
@@ -145,12 +138,11 @@ impl<C: ExecutorClient> Scheduler<C> {
         }
 
         // Plan had no final stage — this should be unreachable for a well-formed
-        // plan. Kotlin returns `emptySequence()`; we panic because it indicates
-        // a planner bug.
+        // plan; reaching here indicates a planner bug.
         panic!("Distributed plan had no final stage")
     }
 
-    /// Execute an intermediate stage. 
+    /// Execute an intermediate stage.
     /// Dispatches one task per partition, round-robin across executors,
     /// and accumulates the shuffle locations.
     fn execute_stage(&self, job_uuid: &str, stage: QueryStage) -> Vec<ShuffleLocation> {
@@ -164,11 +156,14 @@ impl<C: ExecutorClient> Scheduler<C> {
             let task = Task::new(
                 job_uuid,
                 stage.stage_id,
-                partition_id, // task_id == partition_id (Kotlin convention)
+                partition_id, // task_id == partition_id
                 partition_id,
                 Arc::clone(&stage.plan),
             );
-            debug!("Assigning task {} to executor {}", task.task_id, executor.id);
+            debug!(
+                "Assigning task {} to executor {}",
+                task.task_id, executor.id
+            );
             let locations: Vec<ShuffleLocation> = self.executor_client.execute_task(executor, task);
             all_locations.extend(locations);
         }
@@ -194,7 +189,6 @@ impl<C: ExecutorClient> Scheduler<C> {
 
 #[cfg(test)]
 mod tests {
-    //! Port of `kquery/distributed/src/test/kotlin/SchedulerTest.kt`.
     //!
     //! The test exercises the scheduler against an in-process `MockExecutorClient`
     //! — no real Flight server, no shuffle file I/O. Verifies that an aggregate
@@ -204,7 +198,7 @@ mod tests {
     use super::*;
     use crate::ExecutorConfig;
     use datasource::CsvDataSource;
-    use logical_plan::{col, sum, Aggregate, LogicalPlan, Scan};
+    use logical_plan::{Aggregate, LogicalPlan, Scan, col, sum};
     use optimizer::Optimizer;
     use query_planner::QueryPlanner;
     use std::sync::{Arc, Mutex};
@@ -220,7 +214,7 @@ mod tests {
     }
 
     /// In-process mock that records which (executor, task) pairs were dispatched
-    /// where. Kotlin: `class MockExecutorClient : ExecutorClient`.
+    /// where.
     ///
     /// We capture only the executor and the task's (stage_id, task_id,
     /// partition_id) tuple — we do NOT keep the Task itself because the inner
@@ -234,9 +228,9 @@ mod tests {
 
     /// Recorded fields kept (rather than empty unit-struct) so the captured
     /// dispatches are inspectable in a debugger and future tests can extend
-    /// assertions without changing the mock. The current Kotlin port of
-    /// `scheduler assigns tasks to executors round-robin` only checks
-    /// executor IDs and counts, matching upstream.
+    /// assertions without changing the mock. The current
+    /// `scheduler assigns tasks to executors round-robin` test only checks
+    /// executor IDs and counts.
     #[allow(dead_code)]
     #[derive(Clone)]
     struct TaskHandle {
@@ -264,7 +258,7 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push((executor.clone(), handle));
-            // Return one synthetic shuffle location per task (matching Kotlin's mock).
+            // Return one synthetic shuffle location per task.
             vec![ShuffleLocation::new(
                 &task.job_uuid,
                 task.stage_id,
@@ -298,7 +292,6 @@ mod tests {
         }
     }
 
-    /// Kotlin test: `scheduler assigns tasks to executors round-robin`.
     #[test]
     fn scheduler_assigns_tasks_to_executors_round_robin() {
         let config = three_executor_config();

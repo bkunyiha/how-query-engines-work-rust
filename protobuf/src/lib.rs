@@ -1,17 +1,14 @@
 //! # protobuf
 //!
-//! Protocol Buffers schemas + serialise / deserialise helpers for `LogicalPlan`,
-//! `LogicalExpr`, `PhysicalPlan`, `Expression`, `AggregateExpression`, `Action`,
-//! `Schema`, `Field`, `ShuffleLocation`, and `Task`.
+//! Protocol Buffers schemas + serialise / deserialise helpers for
+//! `LogicalPlan`, `LogicalExpr`, `PhysicalPlan`, `Expression`,
+//! `AggregateExpression`, `Action`, `Schema`, `Field`, `ShuffleLocation`, and
+//! `Task`.
 //!
-//! ## Kotlin source
-//! Faithful port of `kquery/protobuf/src/main/kotlin/`:
-//! `ProtobufSerializer.kt`, `ProtobufDeserializer.kt`,
-//! `PhysicalPlanSerializer.kt`, `PhysicalPlanDeserializer.kt`.
-//! Kotlin's stateful-class-with-overloaded-methods shape is replaced by
-//! DataFusion-style free `serialize_*` / `deserialize_*` functions (see each
-//! file's module doc for rationale). The four file names are kept for
-//! navigability with the upstream Kotlin sources.
+//! Serialisers and deserialisers are DataFusion-style free
+//! `serialize_*` / `deserialize_*` functions (see each file's module doc for
+//! the rationale). Wire format used by the `flight-server`, `client`, and
+//! `distributed` crates.
 //!
 //! The `.proto` schema lives at `../proto/rquery.proto`. Code generation runs
 //! at build time via `build.rs` using `tonic-build` (which wraps `prost-build`)
@@ -24,10 +21,6 @@
 //!
 //! The generated Rust types land in `OUT_DIR` and are re-exposed through the
 //! `pb` module below.
-//!
-//! ## Status
-//! Module 12 of 15 — **ported**. Provides the wire format used by modules 13–15
-//! (`flight-server`, `client`, `distributed`).
 
 // =============================================================================
 // Generated prost types from `../proto/rquery.proto`.
@@ -42,7 +35,7 @@ pub mod pb {
 }
 
 // =============================================================================
-// Per-file modules — one per upstream Kotlin source file.
+// Per-file modules.
 // =============================================================================
 pub mod physical_plan_deserializer;
 pub mod physical_plan_serializer;
@@ -64,8 +57,7 @@ pub use physical_plan_deserializer::{
     deserialize_shuffle_location, deserialize_task,
 };
 pub use physical_plan_serializer::{
-    serialize_physical_aggr_expr, serialize_physical_expr, serialize_physical_plan,
-    serialize_task,
+    serialize_physical_aggr_expr, serialize_physical_expr, serialize_physical_plan, serialize_task,
 };
 // Logical-plan ser/de: free functions per DataFusion convention (see file-level docs).
 pub use protobuf_deserializer::{

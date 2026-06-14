@@ -1,5 +1,3 @@
-//! Port of `kquery/distributed/src/main/kotlin/DistributedPlanner.kt`.
-//!
 //! Converts a single-node physical plan into a distributed execution plan made
 //! of stages separated by shuffle boundaries. Currently the only recognised
 //! pattern is the two-stage aggregation:
@@ -9,11 +7,10 @@
 //! Any other plan shape becomes a single final stage.
 //!
 //! ## Shape — `Arc<dyn PhysicalPlan>` throughout (DataFusion-aligned)
-//! Kotlin's `planAggregate` reads `aggregate.input` and constructs a new
-//! `HashAggregateExec` that shares the input via reference. The Rust port uses
-//! `Arc<dyn PhysicalPlan>` to match — `agg.input.clone()` is a cheap Arc
-//! refcount bump, group-by / aggregate / schema fields are clonable, and no
-//! consuming-downcast tricks are needed. Matches DataFusion's
+//! `planAggregate` reads `aggregate.input` and constructs a new
+//! `HashAggregateExec` that shares the input via reference. `agg.input.clone()`
+//! is a cheap Arc refcount bump; group-by / aggregate / schema fields are
+//! clonable, so no consuming-downcast tricks are needed. Matches DataFusion's
 //! `Arc<dyn ExecutionPlan>` shape.
 
 use crate::{DistributedConfig, QueryStage};
@@ -24,7 +21,6 @@ use physical_plan::{
 use std::sync::Arc;
 
 /// Splits a single-node physical plan into distributed query stages.
-/// Kotlin `class DistributedPlanner`.
 pub struct DistributedPlanner {
     config: DistributedConfig,
 }
@@ -35,18 +31,16 @@ impl DistributedPlanner {
     }
 
     /// Plan a physical plan for distributed execution.
-    /// Kotlin: `fun plan(plan: PhysicalPlan, jobUuid: String): List<QueryStage>`.
     pub fn plan(&self, plan: Arc<dyn PhysicalPlan>, job_uuid: &str) -> Vec<QueryStage> {
         if let Some(aggregate) = plan.as_any().downcast_ref::<HashAggregateExec>() {
             self.plan_aggregate(aggregate, job_uuid)
         } else {
-            // Non-aggregate plans become a single final stage. Matches kquery's
-            // `else -> listOf(QueryStage(stageId = 0, plan = plan, isFinalStage = true))`.
+            // Non-aggregate plans become a single final stage.
             vec![QueryStage::new(0, plan).as_final_stage()]
         }
     }
 
-    /// Two-stage aggregation. Kotlin: `planAggregate(aggregate, jobUuid)`.
+    /// Two-stage aggregation.
     ///
     /// Takes the aggregate by reference and Arc-clones the fields we need.
     /// The original aggregate's Arc-reference stays valid for the duration of
@@ -71,8 +65,8 @@ impl DistributedPlanner {
             0, // stage_id
             partition_count,
         );
-        let stage0 = QueryStage::new(0, Arc::new(shuffle_writer))
-            .with_partition_count(partition_count);
+        let stage0 =
+            QueryStage::new(0, Arc::new(shuffle_writer)).with_partition_count(partition_count);
 
         // Stage 1: shuffle read → final aggregate. Locations are filled in by
         // `Scheduler::execute` after stage 0 completes
@@ -93,7 +87,7 @@ impl DistributedPlanner {
     }
 
     /// Inject the actual shuffle locations into a stage's plan after its
-    /// dependency stages complete. Kotlin: `updateShuffleLocations(stage, locations)`.
+    /// dependency stages complete.
     ///
     /// Generic tree walk via [`PhysicalPlan::with_new_children`] —
     /// DataFusion-aligned. Recurses through every node, replaces any
@@ -118,7 +112,7 @@ impl DistributedPlanner {
     }
 }
 
-/// Replace every `ShuffleReaderExec` in the plan tree with one carrying the supplied locations. 
+/// Replace every `ShuffleReaderExec` in the plan tree with one carrying the supplied locations.
 /// Generic walk: recurses on every child via
 /// `PhysicalPlan::with_new_children`. DataFusion-style — any plan shape that
 /// contains a `ShuffleReaderExec` gets its locations updated, not just the
@@ -153,11 +147,10 @@ fn substitute_shuffle_reader(
 
 #[cfg(test)]
 mod tests {
-    //! Port of `kquery/distributed/src/test/kotlin/DistributedPlannerTest.kt`.
     use super::*;
     use crate::ExecutorConfig;
     use datasource::CsvDataSource;
-    use logical_plan::{col, sum, Aggregate, LogicalPlan, Scan};
+    use logical_plan::{Aggregate, LogicalPlan, Scan, col, sum};
     use optimizer::Optimizer;
     use query_planner::QueryPlanner;
     use std::sync::Arc;
@@ -173,7 +166,6 @@ mod tests {
     }
 
     /// `SELECT state, SUM(salary) FROM employee GROUP BY state` → 2 stages.
-    /// Kotlin test: `plan aggregate query into two stages`.
     #[test]
     fn plan_aggregate_query_into_two_stages() {
         let csv = CsvDataSource::new(EMPLOYEE_CSV, None, true, 1024);
@@ -224,7 +216,6 @@ mod tests {
     }
 
     /// Plans with no aggregate become a single final stage.
-    /// Kotlin test: `non-aggregate query produces single stage`.
     #[test]
     fn non_aggregate_query_produces_single_stage() {
         let csv = CsvDataSource::new(EMPLOYEE_CSV, None, true, 1024);

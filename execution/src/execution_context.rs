@@ -1,29 +1,22 @@
-//! Port of `kquery/execution/src/main/kotlin/ExecutionContext.kt`.
+//! The single-node front door to the engine. `ExecutionContext` ties the
+//! whole pipeline together: it parses SQL (or accepts a `DataFrame` built
+//! fluently), optimizes the logical plan, lowers it to a physical plan, and
+//! executes it, yielding a stream of [`RecordBatch`]es. Most user-facing code
+//! and tests call through here.
 //!
-//! The single-node front door to the engine. `ExecutionContext` ties the whole
-//! pipeline together: it parses SQL (or accepts a `DataFrame` built fluently),
-//! optimizes the logical plan, lowers it to a physical plan, and executes it,
-//! yielding a stream of [`RecordBatch`]es. Most user-facing code and tests call
-//! through here.
-//!
-//! ## Translation notes
-//! - **`Map<String, String>` → `HashMap<String, String>`** for settings, and the
-//!   `rquery.csv.batchSize` setting is read the same way (default 1024).
-//! - **`Sequence<RecordBatch>` → `Box<dyn Iterator<Item = RecordBatch>>`** — the
-//!   same lazy-stream shape used by `PhysicalPlan::execute` (see the
-//!   `physical_plan` module note).
-//! - **Overloads → distinct names.** Kotlin overloads `execute(df)` and
-//!   `execute(plan)`. Rust can't overload by argument type, so the plan-taking
-//!   method keeps the name [`ExecutionContext::execute`] and the DataFrame-taking
-//!   one becomes [`ExecutionContext::execute_data_frame`].
-//! - **`register*` take `&mut self`.** Kotlin mutates a `mutableMapOf`; the
-//!   idiomatic Rust equivalent is `&mut self` plus a plain `HashMap`, which also
-//!   keeps the context `Send + Sync` (no interior mutability) so `ParallelContext`
-//!   can share it with rayon workers.
-//! - **`sql()` parses with the hand-ported Pratt parser** (`SqlParser::parse(0)`),
-//!   then expects a `SqlExpr::Select`; anything else panics (§3.6), matching
-//!   Kotlin's `as SqlSelect` cast. The vestigial `DataFrameImpl(df.logicalPlan())`
-//!   re-wrap is dropped — `create_data_frame` already returns the `DataFrame`.
+//! ## Notes
+//! - `settings` is a plain `HashMap<String, String>`; the
+//!   `rquery.csv.batchSize` setting is read at construction (default 1024).
+//! - `PhysicalPlan::execute` yields a lazy
+//!   `Box<dyn Iterator<Item = RecordBatch>>` stream.
+//! - Plan-taking and DataFrame-taking variants have distinct names:
+//!   [`ExecutionContext::execute`] for a logical plan and
+//!   [`ExecutionContext::execute_data_frame`] for a `DataFrame`.
+//! - `register*` methods take `&mut self` and mutate a plain `HashMap`,
+//!   keeping the context `Send + Sync` (no interior mutability) so
+//!   `ParallelContext` can share it with rayon workers.
+//! - `sql()` parses with the Pratt parser (`SqlParser::parse(0)`) and expects
+//!   a `SqlExpr::Select`; anything else panics (§3.6).
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -37,35 +30,38 @@ use query_planner::QueryPlanner;
 // `PrattParser` brings the `parse` method into scope for `SqlParser`.
 use sql::{PrattParser, SqlExpr, SqlParser, SqlPlanner, SqlTokenizer};
 
-/// Default CSV batch size when `rquery.csv.batchSize` is unset. Kotlin: `"1024"`.
+/// Default CSV batch size when `rquery.csv.batchSize` is unset.
 const DEFAULT_BATCH_SIZE: usize = 1024;
 
-/// Single-node execution context. Kotlin `class ExecutionContext`.
+/// Single-node execution context.
 pub struct ExecutionContext {
-    /// Configuration settings. Kotlin `val settings: Map<String, String>`.
+    /// Configuration settings.
     pub settings: HashMap<String, String>,
     /// CSV read batch size, derived from `settings` once at construction.
     batch_size: usize,
-    /// Tables registered with this context (Kotlin `private val tables`).
+    /// Tables registered with this context.
     tables: HashMap<String, DataFrame>,
 }
 
 impl ExecutionContext {
-    /// Kotlin `ExecutionContext(settings)`.
     pub fn new(settings: HashMap<String, String>) -> Self {
         let batch_size = settings
             .get("rquery.csv.batchSize")
             .and_then(|s| s.parse::<usize>().ok())
             .unwrap_or(DEFAULT_BATCH_SIZE);
-        Self { settings, batch_size, tables: HashMap::new() }
+        Self {
+            settings,
+            batch_size,
+            tables: HashMap::new(),
+        }
     }
 
-    /// The configured CSV batch size. Kotlin `val batchSize`.
+    /// The configured CSV batch size.
     pub fn batch_size(&self) -> usize {
         self.batch_size
     }
 
-    /// Create a `DataFrame` for the given SQL `SELECT`. Kotlin `sql(sql)`.
+    /// Create a `DataFrame` for the given SQL `SELECT`.
     pub fn sql(&self, sql: &str) -> DataFrame {
         let tokens = SqlTokenizer::new(sql).tokenize();
         let parsed = SqlParser::new(tokens).parse(0);
@@ -76,36 +72,40 @@ impl ExecutionContext {
         SqlPlanner::new().create_data_frame(&select, &self.tables)
     }
 
-    /// Get a `DataFrame` representing the specified CSV file. Kotlin `csv(filename)`.
+    /// Get a `DataFrame` representing the specified CSV file.
     pub fn csv(&self, filename: &str) -> DataFrame {
         let source = CsvDataSource::new(filename, None, true, self.batch_size);
-        DataFrame::new(LogicalPlan::Scan(Scan::new(filename, Arc::new(source), vec![])))
+        DataFrame::new(LogicalPlan::Scan(Scan::new(
+            filename,
+            Arc::new(source),
+            vec![],
+        )))
     }
 
-    /// Register a `DataFrame` with the context. Kotlin `register(tablename, df)`.
+    /// Register a `DataFrame` with the context.
     pub fn register(&mut self, table_name: &str, df: DataFrame) {
         self.tables.insert(table_name.to_string(), df);
     }
 
-    /// Register a data source with the context. Kotlin `registerDataSource`.
+    /// Register a data source with the context.
     pub fn register_data_source(&mut self, table_name: &str, data_source: Arc<dyn DataSource>) {
         let scan = Scan::new(table_name, data_source, vec![]);
         self.register(table_name, DataFrame::new(LogicalPlan::Scan(scan)));
     }
 
-    /// Register a CSV data source with the context. Kotlin `registerCsv`.
+    /// Register a CSV data source with the context.
     pub fn register_csv(&mut self, table_name: &str, filename: &str) {
         let df = self.csv(filename);
         self.register(table_name, df);
     }
 
-    /// Execute the logical plan represented by a `DataFrame`. Kotlin `execute(df)`.
+    /// Execute the logical plan represented by a `DataFrame`.
     pub fn execute_data_frame(&self, df: &DataFrame) -> Box<dyn Iterator<Item = RecordBatch>> {
         self.execute(df.logical_plan())
     }
 
-    /// Execute the provided logical plan. Kotlin `execute(plan)`: optimize, lower
-    /// to a physical plan, and run it.
+    /// Execute the provided logical plan: optimize, lower to a physical plan,
+    /// and run it.
     ///
     /// Constructs a single-process `ExecutorContext` to satisfy the trait
     /// signature. Non-shuffle operators ignore it; the executor identity is
@@ -121,37 +121,30 @@ impl ExecutionContext {
 
 #[cfg(test)]
 mod tests {
-    //! Port of `ExecutionSqlTest.kt` (logical-plan-string assertions) and the
-    //! `ExecutionTest.kt` cases. The `Fuzzer`-backed cases — `min max sum float`,
-    //! `float math`, `boolean expressions`, `inner join using DataFrame`,
-    //! `left join using DataFrame` — use the now-ported `fuzzer` crate (module 9).
-    //! The `date and interval arithmetic` case is no longer blocked at the
-    //! planner (`LiteralDate` now lowers via `chrono::NaiveDate` → days-since-
-    //! Unix-epoch, matching Kotlin's `LocalDate.toEpochDay()`); a port of that
-    //! test can land alongside any remaining `DateSubtractInterval` work.
+    //! Integration tests for `ExecutionContext`: logical-plan-string
+    //! assertions for `ctx.sql()`, plus end-to-end execution cases. The
+    //! `Fuzzer`-backed cases — `min max sum float`, `float math`,
+    //! `boolean expressions`, `inner join using DataFrame`,
+    //! `left join using DataFrame` — exercise the `fuzzer` crate (module 9).
     //!
     //! ## Float formatting note
-    //! Kotlin's `Float.toString()` emits `"1.0"` for whole-valued floats; Rust's
-    //! `f32::to_string()` (which `datatypes::record_batch::to_csv` uses) emits
-    //! `"1"`. The Fuzzer-backed float tests below assert against Rust's actual
-    //! output, so `min max sum float` checks `"a,1,2,3"` rather than Kotlin's
-    //! `"a,1.0,2.0,3.0"`; `float_math` computes its expected division literally
-    //! (`let q = 1.0_f32 / 11.0_f32`) so the assertion matches whatever Rust's
-    //! formatter produces. Logged in `TRANSLATION_NOTES.md` under module
-    //! `execution` / `datatypes`.
+    //! Rust's `f32::to_string()` (which `datatypes::record_batch::to_csv` uses)
+    //! emits `"1"` for whole-valued floats rather than `"1.0"`. The
+    //! Fuzzer-backed float tests below assert against that exact output, so
+    //! `min max sum float` checks `"a,1,2,3"`; `float_math` computes its
+    //! expected division literally (`let q = 1.0_f32 / 11.0_f32`) so the
+    //! assertion matches whatever Rust's formatter produces.
     use super::*;
     use datasource::InMemoryDataSource;
     use datatypes::arrow_types::{BOOLEAN_TYPE, FLOAT_TYPE, INT32_TYPE, STRING_TYPE};
     use datatypes::record_batch::to_csv;
     use datatypes::{Field, ScalarValue, Schema};
     use fuzzer::Fuzzer;
-    use logical_plan::{cast, col, format, lit_string, max, min, sum, JoinType};
+    use logical_plan::{JoinType, cast, col, format, lit_string, max, min, sum};
     use std::collections::HashSet;
 
     /// Helper: wrap a single in-memory `RecordBatch` as a `DataFrame` over a
-    /// scan of an `InMemoryDataSource`. Mirrors the
-    /// `DataFrameImpl(Scan("", InMemoryDataSource(schema, listOf(batch)), listOf()))`
-    /// shape repeated in every Kotlin `ExecutionTest` Fuzzer case.
+    /// scan of an `InMemoryDataSource`. Used by every Fuzzer-backed case.
     fn in_memory_df(name: &str, schema: Schema, batch: RecordBatch) -> DataFrame {
         let source = InMemoryDataSource::new(schema, vec![batch]);
         DataFrame::new(LogicalPlan::Scan(Scan::new(name, Arc::new(source), vec![])))
@@ -248,9 +241,10 @@ mod tests {
         // rows rather than their order. Rust's `to_csv` renders the null-state
         // group as "null,11500"; we check the two named groups + the row count.
         let ctx = ExecutionContext::new(HashMap::new());
-        let df = ctx
-            .csv(EMPLOYEE_CSV)
-            .aggregate(vec![col("state")], vec![max(cast(col("salary"), INT32_TYPE))]);
+        let df = ctx.csv(EMPLOYEE_CSV).aggregate(
+            vec![col("state")],
+            vec![max(cast(col("salary"), INT32_TYPE))],
+        );
         let batches: Vec<RecordBatch> = ctx.execute_data_frame(&df).collect();
         assert_eq!(batches.len(), 1);
 
@@ -297,10 +291,10 @@ mod tests {
 
     #[test]
     fn min_max_sum_float() {
-        // Kotlin asserts the exact ordered CSV "a,1.0,2.0,3.0\nb,3.0,4.0,7.0\n".
         // The HashMap-driven aggregate has non-deterministic output order, so we
         // assert as a row SET (same approach as `aggregate_query` above). Float
-        // formatting also differs — see the module-level float-formatting note.
+        // formatting follows Rust's `f32::to_string` — see the module-level
+        // float-formatting note.
         let schema = Schema::new(vec![
             Field::new("a", STRING_TYPE),
             Field::new("b", FLOAT_TYPE),
@@ -342,10 +336,7 @@ mod tests {
         // Project a/b/a*b/a/b over four (a,b) pairs where a/b is always 1/11.
         // Compute `q = 1.0_f32 / 11.0_f32` literally so the expected string
         // matches whatever Rust's f32 formatter produces — no guesswork about
-        // float precision. (Kotlin's expected string was "0.09090909" formatted
-        // by the JVM; Rust may format the same f32 value identically or with a
-        // different number of significant digits, and either way the equality
-        // holds because we use the same `1.0_f32 / 11.0_f32` value.)
+        // float precision.
         let schema = Schema::new(vec![
             Field::new("a", FLOAT_TYPE),
             Field::new("b", FLOAT_TYPE),
@@ -380,9 +371,7 @@ mod tests {
 
         // a/b is 1/11 for every row by construction.
         let q = 1.0_f32 / 11.0_f32;
-        let expected = format!(
-            "12,-10,11,{q}\n24,-20,44,{q}\n48,-40,176,{q}\n36,-30,99,{q}\n"
-        );
+        let expected = format!("12,-10,11,{q}\n24,-20,44,{q}\n48,-40,176,{q}\n36,-30,99,{q}\n");
         assert_eq!(to_csv(&batches[0]), expected);
     }
 
@@ -411,10 +400,8 @@ mod tests {
         );
 
         let ctx = ExecutionContext::new(HashMap::new());
-        let df = in_memory_df("test", schema, batch).project(vec![
-            col("a").and(col("b")),
-            col("a").or(col("b")),
-        ]);
+        let df = in_memory_df("test", schema, batch)
+            .project(vec![col("a").and(col("b")), col("a").or(col("b"))]);
         let batches: Vec<RecordBatch> = ctx.execute_data_frame(&df).collect();
         assert_eq!(batches.len(), 1);
         assert_eq!(
@@ -466,11 +453,7 @@ mod tests {
 
         let left_df = in_memory_df("left", left_schema, left_batch);
         let right_df = in_memory_df("right", right_schema, right_batch);
-        let joined = left_df.join(
-            right_df,
-            JoinType::Inner,
-            vec![("id".into(), "id".into())],
-        );
+        let joined = left_df.join(right_df, JoinType::Inner, vec![("id".into(), "id".into())]);
 
         let ctx = ExecutionContext::new(HashMap::new());
         let batches: Vec<RecordBatch> = ctx.execute_data_frame(&joined).collect();
@@ -516,11 +499,7 @@ mod tests {
 
         let left_df = in_memory_df("left", left_schema, left_batch);
         let right_df = in_memory_df("right", right_schema, right_batch);
-        let joined = left_df.join(
-            right_df,
-            JoinType::Left,
-            vec![("id".into(), "id".into())],
-        );
+        let joined = left_df.join(right_df, JoinType::Left, vec![("id".into(), "id".into())]);
 
         let ctx = ExecutionContext::new(HashMap::new());
         let batches: Vec<RecordBatch> = ctx.execute_data_frame(&joined).collect();

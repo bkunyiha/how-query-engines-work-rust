@@ -1,6 +1,6 @@
 [package]
 name         = "distributed"
-description  = "Distributed query execution: scheduler, query stages, distributed planner. Rust port of kquery/distributed."
+description  = "Distributed query execution: scheduler, query stages, distributed planner."
 edition.workspace      = true
 license.workspace      = true
 version.workspace      = true
@@ -9,17 +9,15 @@ rust-version.workspace = true
 
 [dependencies]
 # External
-# `tracing` matches DataFusion's logging idiom (replaces kquery's `java.util.logging.Logger`
-# in `Scheduler.kt`).
-# `uuid` mints fresh `jobUuid` strings — analogue of `java.util.UUID.randomUUID()`.
-# No `arrow-flight` or `protobuf` dep — kquery's distributed module imports neither.
-# The Flight transport lives behind the `ExecutorClient` trait (in `scheduler.rs`),
-# whose implementation lives in `flight-server` / `client` (modules 13 / 15).
+# `tracing` matches DataFusion's logging idiom.
+# `uuid` mints fresh `job_uuid` strings via `Uuid::new_v4()`.
+# No `arrow-flight` or `protobuf` dep — the Flight transport lives behind the
+# `ExecutorClient` trait (in `scheduler.rs`), whose implementation lives in
+# `flight-server` / `client`.
 tracing        = { workspace = true }
 uuid           = { workspace = true }
 
-# Internal — exactly the siblings the kquery distributed module imports.
-# Verified by grep against `kquery/distributed/src/main/kotlin/`:
+# Internal siblings:
 #   - datasource (CsvDataSource in DistributedContext)
 #   - datatypes (RecordBatch return type)
 #   - logical-plan (LogicalPlan/Scan, DataFrame for the context facade)
@@ -28,8 +26,9 @@ uuid           = { workspace = true }
 #   - optimizer (Optimizer in DistributedContext.execute)
 #   - query-planner (QueryPlanner in DistributedContext.execute)
 #   - sql (SqlParser / SqlPlanner / SqlSelect / SqlTokenizer in DistributedContext.sql)
-# `execution` is NOT a dependency — kquery's distributed module does not import
-# anything from `execution/`; it builds its own context type.
+# `execution` is intentionally NOT a dependency — `DistributedContext`
+# re-implements the registry / SQL parse pipeline rather than reusing
+# `ExecutionContext`.
 datasource     = { path = "../datasource" }
 datatypes      = { path = "../datatypes" }
 logical-plan   = { path = "../logical-plan" }

@@ -1,6 +1,6 @@
 [package]
 name         = "benchmarks"
-description  = "TPC-H runner and NYC taxi benchmark. Rust port of kquery/benchmarks."
+description  = "TPC-H runner and NYC taxi benchmark."
 edition.workspace      = true
 license.workspace      = true
 version.workspace      = true
@@ -11,13 +11,11 @@ rust-version.workspace = true
 execution    = { path = "../execution" }
 datasource   = { path = "../datasource" }    # ParquetDataSource (tpch_runner), InMemoryDataSource (benchmarks)
 datatypes    = { path = "../datatypes" }     # RecordBatch, SchemaConverter, to_csv
-# Coroutines → rayon (ARCHITECTURE.md §3.9): `benchmarks` fans out one query
-# per input CSV via `into_par_iter().flat_map(...)`, the third of the three
-# documented coroutine call sites in kquery.
+# Data parallelism: `benchmarks` fans out one query per input CSV via
+# `into_par_iter().flat_map(...)`.
 rayon        = { workspace = true }
-# Process-memory stats — Rust analogue of Kotlin's
-# `Runtime.getRuntime().{max,total,free}Memory()` (standing convention:
-# Kotlin stdlib → matching Rust crate).
+# Process-memory stats — used to report RSS / virtual / available memory at
+# the start and end of a benchmark run.
 sysinfo      = { workspace = true }
 anyhow       = { workspace = true }
 log          = { workspace = true }

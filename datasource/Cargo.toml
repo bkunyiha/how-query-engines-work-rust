@@ -1,6 +1,6 @@
 [package]
 name         = "datasource"
-description  = "DataSource trait + CSV / Parquet / in-memory implementations. Rust port of kquery/datasource."
+description  = "DataSource trait with CSV, Parquet, and in-memory implementations."
 edition.workspace      = true
 license.workspace      = true
 version.workspace      = true

@@ -1,15 +1,9 @@
-//! Internal helper — **no Kotlin counterpart.**
+//! A hashable key built from a row's values, shared by `HashAggregateExec`
+//! (group keys) and `HashJoinExec` (join keys).
 //!
-//! A hashable key built from a row's values, shared by `HashAggregateExec` (group
-//! keys) and `HashJoinExec` (join keys). Kotlin keys its maps with `List<Any?>`
-//! and relies on the JVM's `hashCode`/`equals`; Rust needs an explicit key type.
-//! Floats are hashed and compared **by bit pattern**, so `Hash` and `Eq` agree
-//! (and `NaN` keys group together) — the same behaviour a JVM `HashMap` gives
-//! `Double` keys.
-//!
-//! ARCHITECTURE §4.6 calls for generalising this hash-table helper out of
-//! `HashAggregateExec` before porting `HashJoinExec`, so both operators share one
-//! implementation rather than duplicating the float-aware hashing.
+//! Floats are hashed and compared **by bit pattern**, so `Hash` and `Eq`
+//! agree (and `NaN` keys group together). See ARCHITECTURE §4.6 for the
+//! rationale for sharing one implementation across both operators.
 
 use datatypes::ScalarValue;
 use std::hash::{Hash, Hasher};
@@ -20,8 +14,7 @@ pub(crate) struct RowKey(pub Vec<ScalarValue>);
 
 impl PartialEq for RowKey {
     fn eq(&self, other: &Self) -> bool {
-        self.0.len() == other.0.len()
-            && self.0.iter().zip(&other.0).all(|(a, b)| scalar_eq(a, b))
+        self.0.len() == other.0.len() && self.0.iter().zip(&other.0).all(|(a, b)| scalar_eq(a, b))
     }
 }
 

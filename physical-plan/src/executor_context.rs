@@ -1,48 +1,33 @@
 //! Per-executor runtime context for distributed task execution.
 //!
-//! Kotlin equivalent: the four constructor parameters of
-//! `KQueryFlightProducer` (`executorId`, `executorHost`, `executorPort`,
-//! `shuffleDir`) plus the `shuffleManager` it constructs from `shuffleDir`.
+//! Bundles the per-executor identity (`executor_id`, `executor_host`,
+//! `executor_port`) with the shuffle storage handle
+//! (`Arc<ShuffleManager>`) into a single value that operators receive
+//! through `execute(&ctx)`.
 //!
-//! Why a struct (and not five separate args). The shuffle operators
-//! ([`crate::ShuffleWriterExec`] and [`crate::ShuffleReaderExec`]) need all
-//! five pieces of state to do their work — identity for the locations they
-//! report, plus the [`crate::ShuffleManager`] for the local file I/O.
-//! Passing them as a single context value (modules 13/15) keeps the operator
-//! signatures stable and matches DataFusion + Ballista's `TaskContext` idiom
-//! (single context value flowing through `execute()`).
+//! ## Why a struct (and not separate args)
 //!
-//! Why this struct lives here, not in `flight-server`, `distributed`, or
-//! `execution`. The struct is *consumed* by the shuffle operators in
-//! `physical-plan` (`ShuffleWriterExec::execute_and_write_shuffle` /
-//! `ShuffleReaderExec::execute_with_context`), so it has to live in (or be
-//! accessible from) `physical-plan`. The other candidate crates all
-//! transitively depend on `physical-plan`:
+//! The shuffle operators ([`crate::ShuffleWriterExec`] and
+//! [`crate::ShuffleReaderExec`]) need all four pieces of state to do
+//! their work — identity for the locations they report, plus the
+//! [`crate::ShuffleManager`] for the local file I/O. Passing them as a
+//! single context value keeps the operator signatures stable and
+//! matches DataFusion's `Arc<TaskContext>` idiom (single context value
+//! flowing through every operator's `execute()`).
 //!
-//! ```text
-//! execution     → physical-plan   (execution::Cargo.toml: physical-plan = ...)
-//! distributed   → physical-plan
-//! flight-server → physical-plan
-//! ```
+//! ## Crate placement
 //!
-//! Putting `ExecutorContext` in any of those crates means `physical-plan`
-//! would have to import its own consumer to use it — a dependency cycle
-//! Cargo refuses. So `physical-plan/` is the only place in the current
-//! workspace where `ExecutorContext` *can* live without a re-layering.
+//! `ExecutorContext` lives in `physical-plan/` because that's where it
+//! is consumed — `ShuffleWriterExec::write_shuffle(&ctx)` and
+//! `ShuffleReaderExec::execute(&ctx)` both read its fields. Every other
+//! candidate crate (`execution`, `distributed`, `flight-server`)
+//! transitively depends on `physical-plan`, so placing the struct
+//! anywhere else would create a dependency cycle.
 //!
-//! How DataFusion handles the same problem. DataFusion has a separate
-//! `datafusion-execution` crate that sits *below* `datafusion-physical-plan`
-//! in the dep tree, holding `TaskContext`/`RuntimeEnv`/`SessionConfig`.
-//! Every operator's `execute(partition, ctx: Arc<TaskContext>)` takes it as
-//! a parameter. Ballista layers on top: `ballista-executor::Executor` holds
-//! per-process identity + work_dir (the analogue of our `executor_id` +
-//! `shuffle_manager`) and constructs a `TaskContext` per task.
-//!
-//! See `ARCHITECTURE.md` §1.5 — Phase 2 deliverable (task #1 in the project
-//! tracker): both `ShuffleManager` and `ExecutorContext` move to
-//! `flight-server/` as part of the Ballista-style `physical-plan →
-//! distributed → flight-server` split. For Phase 1 they stay here so the
-//! kquery layering is preserved line-by-line.
+//! DataFusion solves the same layering question by introducing a
+//! separate `datafusion-execution` crate below `datafusion-physical-plan`;
+//! Ballista layers `ballista-executor` on top to hold per-process
+//! identity.
 
 use crate::shuffle_manager::ShuffleManager;
 use std::sync::Arc;
@@ -67,16 +52,15 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct ExecutorContext {
     /// Unique identifier for this executor in the cluster. Mirrors
-    /// `DistributedConfig::ExecutorConfig::id`. Kotlin: `executorId`.
+    /// `DistributedConfig::ExecutorConfig::id`.
     pub executor_id: String,
 
-    /// Hostname or IP this executor listens on. Kotlin: `executorHost`.
+    /// Hostname or IP this executor listens on.
     pub executor_host: String,
 
-    /// Port this executor's Arrow Flight server listens on. Kotlin:
-    /// `executorPort`. Stored as `i32` to match
-    /// [`crate::ShuffleLocation::executor_port`] (one less conversion at
-    /// every `ShuffleLocation::new` call site).
+    /// Port this executor's Arrow Flight server listens on. Stored as `i32`
+    /// to match [`crate::ShuffleLocation::executor_port`] (one less
+    /// conversion at every `ShuffleLocation::new` call site).
     pub executor_port: i32,
 
     /// Local shuffle storage. Held in an `Arc` so per-task closures
@@ -87,9 +71,7 @@ pub struct ExecutorContext {
 
 impl ExecutorContext {
     /// Construct from raw fields plus the shuffle directory. The
-    /// [`ShuffleManager`] is built internally — mirrors Kotlin's
-    /// `private val shuffleManager = ShuffleManager(shuffleDir)` in
-    /// `KQueryFlightProducer`'s init block.
+    /// [`ShuffleManager`] is built internally.
     pub fn new(
         executor_id: impl Into<String>,
         executor_host: impl Into<String>,
@@ -164,8 +146,7 @@ mod tests {
         // allocation, no rebuild.
         let sm = Arc::new(ShuffleManager::new("/tmp/byo"));
         let strong_before = Arc::strong_count(&sm);
-        let ctx =
-            ExecutorContext::with_shuffle_manager("exec-1", "h", 50052, Arc::clone(&sm));
+        let ctx = ExecutorContext::with_shuffle_manager("exec-1", "h", 50052, Arc::clone(&sm));
         // Two Arcs now: the one we still hold (`sm`) and the one inside `ctx`.
         let strong_after = Arc::strong_count(&sm);
         assert_eq!(strong_after, strong_before + 1);

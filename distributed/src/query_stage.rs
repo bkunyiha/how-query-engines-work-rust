@@ -1,24 +1,15 @@
-//! Port of `kquery/distributed/src/main/kotlin/QueryStage.kt`.
-//!
 //! A query is divided into stages at shuffle boundaries; each stage runs
 //! independently on different executors, with data shuffled between stages.
-//!
-//! ## Skipped — `StageResult`
-//! kquery defines a `data class StageResult` in the same file but never
-//! instantiates it (the scheduler returns shuffle-location lists directly). We
-//! skip it. If a future reader wants it back, the Kotlin definition lives at
-//! `QueryStage.kt:42–58` upstream.
 
 use physical_plan::PhysicalPlan;
 use std::sync::Arc;
 
 /// One stage in a distributed query execution plan.
 ///
-/// Kotlin `data class QueryStage(stageId, plan, dependencies = [], partitionCount = 1, isFinalStage = false)`.
-/// Kotlin's parameter defaults become Rust builder methods ([`Self::with_dependencies`],
+/// Optional fields are set via builder methods ([`Self::with_dependencies`],
 /// [`Self::with_partition_count`], [`Self::as_final_stage`]).
 ///
-/// ## Translation note — `Arc<dyn PhysicalPlan>` for the plan field
+/// ## `Arc<dyn PhysicalPlan>` for the plan field
 /// Matches DataFusion's `Arc<dyn ExecutionPlan>` shape: cheap to clone (refcount
 /// bump), Arc-share with `Task::plan` and the scheduler without conversion. No
 /// `Clone` / `Debug` derives — `dyn PhysicalPlan` is not generally clonable
@@ -38,7 +29,7 @@ pub struct QueryStage {
 }
 
 impl QueryStage {
-    /// Construct with kquery's defaults: no dependencies, 1 partition, not final.
+    /// Construct with defaults: no dependencies, 1 partition, not final.
     pub fn new(stage_id: i32, plan: Arc<dyn PhysicalPlan>) -> Self {
         Self {
             stage_id,
@@ -69,8 +60,7 @@ impl QueryStage {
 
     /// Builder: replace the plan, keeping everything else. Used by
     /// `DistributedPlanner::update_shuffle_locations` to inject post-stage-0
-    /// shuffle locations into the stage-1 plan. Kotlin equivalent:
-    /// `stage.copy(plan = updatedPlan)`.
+    /// shuffle locations into the stage-1 plan.
     pub fn with_plan(mut self, plan: Arc<dyn PhysicalPlan>) -> Self {
         self.plan = plan;
         self

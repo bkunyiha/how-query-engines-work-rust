@@ -1,36 +1,26 @@
-//! Port of `kquery/datatypes/src/main/kotlin/ArrowFieldVector.kt`.
+//! Wraps an arrow-rs `ArrayRef` so it implements [`ColumnVector`].
 //!
-//! Wraps an arrow-rs `ArrayRef` so it implements [`ColumnVector`]. The Kotlin
-//! source has three things in this file:
-//! 1. `ArrowAllocator` (singleton wrapping a `RootAllocator`)
-//! 2. `FieldVectorFactory.create(...)` — builds typed `FieldVector`s
-//! 3. `ArrowFieldVector` class — wraps a `FieldVector`, implements `ColumnVector`
-//!
-//! Translation notes:
-//! - **`ArrowAllocator` is NOT ported.** arrow-rs uses its own memory model
-//!   (`Buffer` is `Arc`-backed) and does not expose a separate allocator
-//!   abstraction at this level. Vector construction in arrow-rs goes through
-//!   typed builders (`Int32Builder::new()`, etc.) that allocate directly.
-//! - **`FieldVectorFactory.create(...)`** is also not ported as-is. The Kotlin
-//!   factory returns a `FieldVector` ready to be mutated; arrow-rs's equivalent
-//!   is the per-type builder pattern handled in [`crate::arrow_vector_builder`].
-//! - **`ArrowFieldVector`** wraps `arrow_array::ArrayRef` (= `Arc<dyn Array>`)
-//!   instead of Java Arrow's `FieldVector`. The `get_type`/`get_value`/`size`
-//!   methods dispatch on the underlying Arrow type — the Rust version uses
-//!   `array.as_any().downcast_ref::<...>()` where Kotlin used `is`-checks.
+//! ## Notes
+//! - arrow-rs uses its own memory model — `Buffer` is `Arc`-backed and there
+//!   is no separate allocator abstraction at this level. Vector construction
+//!   goes through typed builders (`Int32Builder::new()`, etc.) that allocate
+//!   directly; the construction layer lives in
+//!   [`crate::arrow_vector_builder`].
+//! - **`ArrowFieldVector`** wraps `arrow_array::ArrayRef` (= `Arc<dyn Array>`).
+//!   The `get_type`/`get_value`/`size` methods dispatch on the underlying
+//!   Arrow type via `array.as_any().downcast_ref::<...>()`.
 
 use crate::{column_vector::ColumnVector, scalar_value::ScalarValue};
 use arrow_array::{
-    Array, ArrayRef, BinaryArray, BooleanArray, Date32Array, Float32Array, Float64Array,
-    Int16Array, Int32Array, Int64Array, Int8Array, StringArray, UInt16Array, UInt32Array,
-    UInt64Array, UInt8Array,
+    Array, ArrayRef, BinaryArray, BooleanArray, Date32Array, Float32Array, Float64Array, Int8Array,
+    Int16Array, Int32Array, Int64Array, StringArray, UInt8Array, UInt16Array, UInt32Array,
+    UInt64Array,
 };
 use arrow_schema::DataType;
 
 /// Wrapper around an arrow-rs `ArrayRef` (`Arc<dyn Array>`) implementing
-/// [`ColumnVector`]. Renamed from Kotlin's `field: FieldVector` to
-/// `field: ArrayRef` because arrow-rs uses `Array`, not `FieldVector`,
-/// as its trait object.
+/// [`ColumnVector`]. The `field` member is an `ArrayRef` because arrow-rs uses
+/// `Array` as its trait object.
 pub struct ArrowFieldVector {
     pub field: ArrayRef,
 }
@@ -43,8 +33,8 @@ impl ArrowFieldVector {
 
 impl ColumnVector for ArrowFieldVector {
     fn get_type(&self) -> DataType {
-        // arrow-rs's `Array` trait carries the data type directly — no need
-        // to dispatch on concrete vector types as the Kotlin version does.
+        // arrow-rs's `Array` trait carries the data type directly — no
+        // dispatch on the concrete vector type is needed.
         self.field.data_type().clone()
     }
 
@@ -53,8 +43,7 @@ impl ColumnVector for ArrowFieldVector {
             return ScalarValue::Null;
         }
         // Dispatch on the data type, then downcast to the concrete array
-        // implementation to read the typed value. This is the Rust analogue
-        // of Kotlin's `when (field) { is BitVector -> ..., is IntVector -> ... }`.
+        // implementation to read the typed value.
         match self.field.data_type() {
             DataType::Boolean => {
                 let a = self.field.as_any().downcast_ref::<BooleanArray>().unwrap();
@@ -112,7 +101,10 @@ impl ColumnVector for ArrowFieldVector {
                 let a = self.field.as_any().downcast_ref::<Date32Array>().unwrap();
                 ScalarValue::Date32(a.value(i))
             }
-            other => panic!("ArrowFieldVector::get_value: unsupported data type: {:?}", other),
+            other => panic!(
+                "ArrowFieldVector::get_value: unsupported data type: {:?}",
+                other
+            ),
         }
     }
 

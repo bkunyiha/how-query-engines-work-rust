@@ -1,16 +1,12 @@
-//! Port of `kquery/datatypes/src/main/kotlin/RecordBatch.kt`.
-//!
 //! Batch of data organised in columns.
 //!
-//! Translation notes:
+//! ## Notes
 //! - **Do not reinvent `RecordBatch`.** arrow-rs already provides
-//!   `arrow_array::RecordBatch`, with the same semantics as the Kotlin wrapper
-//!   (immutable batch of columns sharing a schema). We re-export the arrow-rs
-//!   type rather than wrapping it.
-//! - **Kotlin-style helpers** (`row_count`, `column_count`, `field(i)`,
-//!   `to_csv`) are provided as a free-function or extension-style helper
-//!   module on top of arrow-rs's type. The names mirror the Kotlin methods.
-//! - **`close()` is dropped** — arrow-rs's `RecordBatch` is `Arc`-backed and
+//!   `arrow_array::RecordBatch` — an immutable batch of columns sharing a
+//!   schema. We re-export the arrow-rs type rather than wrapping it.
+//! - **Helpers** (`row_count`, `column_count`, `field(i)`, `to_csv`) are
+//!   free functions in this module that operate on the arrow-rs type.
+//! - **No `close()` method** — arrow-rs's `RecordBatch` is `Arc`-backed and
 //!   self-releasing.
 
 use crate::arrow_vector_builder::ArrowVectorBuilder;
@@ -26,21 +22,18 @@ pub use arrow_array::RecordBatch;
 
 /// Number of rows in the batch.
 ///
-/// Kotlin: `RecordBatch.rowCount()`.
 pub fn row_count(batch: &RecordBatch) -> usize {
     batch.num_rows()
 }
 
 /// Number of columns in the batch.
 ///
-/// Kotlin: `RecordBatch.columnCount()`.
 pub fn column_count(batch: &RecordBatch) -> usize {
     batch.num_columns()
 }
 
 /// Access one column by index, returning it as a [`ColumnVector`].
 ///
-/// Kotlin: `RecordBatch.field(i)` (returns `ColumnVector`). The Rust version
 /// allocates a new [`ArrowFieldVector`] wrapper around the existing
 /// `ArrayRef` — cheap because `ArrayRef` is `Arc<dyn Array>` and is cloned
 /// by reference.
@@ -67,13 +60,11 @@ pub fn column_to_array(col: &dyn ColumnVector) -> ArrayRef {
 
 /// Build a [`RecordBatch`] from a [`Schema`] and a set of evaluated columns.
 ///
-/// This is the Rust counterpart of Kotlin's secondary constructor
-/// `RecordBatch(schema: Schema, fields: List<ColumnVector>)`. Because the Rust
-/// port re-exports arrow's `RecordBatch` (which holds `ArrayRef`s rather than
-/// `ColumnVector`s — see the file-level note), each column is materialized via
-/// [`column_to_array`] and the `Schema` is converted with [`Schema::to_arrow`].
-/// Panics if the columns don't match the schema, matching the engine's
-/// panic-on-invalid-state convention.
+/// Because we re-export arrow's `RecordBatch` (which holds `ArrayRef`s rather
+/// than `ColumnVector`s — see the file-level note), each column is
+/// materialized via [`column_to_array`] and the `Schema` is converted with
+/// [`Schema::to_arrow`]. Panics if the columns don't match the schema,
+/// matching the engine's panic-on-invalid-state convention.
 pub fn create(schema: &Schema, columns: Vec<Box<dyn ColumnVector>>) -> RecordBatch {
     let arrays: Vec<ArrayRef> = columns
         .iter()
@@ -85,7 +76,7 @@ pub fn create(schema: &Schema, columns: Vec<Box<dyn ColumnVector>>) -> RecordBat
 }
 
 /// Render the batch as CSV, one row per line, comma-separated values.
-/// Useful for tests and debugging. Matches the Kotlin `toCSV()` method.
+/// Useful for tests and debugging.
 pub fn to_csv(batch: &RecordBatch) -> String {
     let mut out = String::new();
     let rows = batch.num_rows();
@@ -102,19 +93,19 @@ pub fn to_csv(batch: &RecordBatch) -> String {
             let v = ArrowFieldVector::new(batch.column(col_index).clone());
             let value = v.get_value(row_index);
             match value {
-                ScalarValue::Null     => out.push_str("null"),
+                ScalarValue::Null => out.push_str("null"),
                 ScalarValue::Boolean(b) => out.push_str(&b.to_string()),
-                ScalarValue::Int8(n)  => out.push_str(&n.to_string()),
+                ScalarValue::Int8(n) => out.push_str(&n.to_string()),
                 ScalarValue::Int16(n) => out.push_str(&n.to_string()),
                 ScalarValue::Int32(n) => out.push_str(&n.to_string()),
                 ScalarValue::Int64(n) => out.push_str(&n.to_string()),
-                ScalarValue::UInt8(n)  => out.push_str(&n.to_string()),
+                ScalarValue::UInt8(n) => out.push_str(&n.to_string()),
                 ScalarValue::UInt16(n) => out.push_str(&n.to_string()),
                 ScalarValue::UInt32(n) => out.push_str(&n.to_string()),
                 ScalarValue::UInt64(n) => out.push_str(&n.to_string()),
                 ScalarValue::Float32(n) => out.push_str(&n.to_string()),
                 ScalarValue::Float64(n) => out.push_str(&n.to_string()),
-                ScalarValue::Utf8(s)   => out.push_str(&s),
+                ScalarValue::Utf8(s) => out.push_str(&s),
                 ScalarValue::Binary(b) => out.push_str(&String::from_utf8_lossy(&b)),
                 ScalarValue::Date32(d) => out.push_str(&d.to_string()),
             }
@@ -134,10 +125,10 @@ mod tests {
 
     fn sample_batch() -> RecordBatch {
         let schema = Arc::new(ArrowSchema::new(vec![
-            ArrowField::new("id",   INT32_TYPE, false),
+            ArrowField::new("id", INT32_TYPE, false),
             ArrowField::new("name", STRING_TYPE, false),
         ]));
-        let id:   ArrayRef = Arc::new(Int32Array::from(vec![1, 2, 3]));
+        let id: ArrayRef = Arc::new(Int32Array::from(vec![1, 2, 3]));
         let name: ArrayRef = Arc::new(StringArray::from(vec!["a", "b", "c"]));
         RecordBatch::try_new(schema, vec![id, name]).unwrap()
     }
@@ -145,7 +136,7 @@ mod tests {
     #[test]
     fn row_and_column_counts() {
         let b = sample_batch();
-        assert_eq!(row_count(&b),    3);
+        assert_eq!(row_count(&b), 3);
         assert_eq!(column_count(&b), 2);
     }
 
@@ -167,8 +158,8 @@ mod tests {
 
     #[test]
     fn create_materializes_columns_including_a_literal() {
-        use crate::literal_value_vector::LiteralValueVector;
         use crate::Field;
+        use crate::literal_value_vector::LiteralValueVector;
 
         // One real column (id) and one *virtual* literal column — the literal has
         // no backing array, so `create` must materialize it.
@@ -179,10 +170,7 @@ mod tests {
             Field::new("seven", INT32_TYPE),
         ]);
 
-        let batch = create(
-            &schema,
-            vec![Box::new(id), Box::new(lit)],
-        );
+        let batch = create(&schema, vec![Box::new(id), Box::new(lit)]);
 
         assert_eq!(row_count(&batch), 3);
         assert_eq!(column_count(&batch), 2);

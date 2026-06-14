@@ -1,20 +1,16 @@
-//! Port of `kquery/datasource/src/main/kotlin/DataSource.kt`.
-//!
 //! Trait that every concrete data source implements.
 //!
-//! Translation notes:
-//! - Kotlin `interface DataSource` → Rust `pub trait DataSource`.
-//! - Kotlin `fun scan(projection: List<String>): Sequence<RecordBatch>` returns
-//!   a lazy stream of batches. `Sequence<T>` becomes
-//!   `Box<dyn Iterator<Item = T>>` in this port. Errors panic rather
-//!   than being threaded through `Result<_>` — a future Rustified rewrite will
-//!   switch to `Stream<Item = Result<RecordBatch, FdapError>>`.
+//! ## Notes
+//! - `scan` returns a lazy `Box<dyn Iterator<Item = RecordBatch>>` of batches.
+//!   Errors panic rather than being threaded through `Result<_>` — a future
+//!   refactor will switch to `Stream<Item = Result<RecordBatch, FdapError>>`.
 //! - `Send + Sync`: a `ScanExec` holds `Arc<dyn DataSource>` and is itself a
-//!   `PhysicalPlan`, which requires `Send + Sync` so `ParallelContext` can hand
-//!   plans to rayon workers (see the `physical_plan` module note). Every concrete
-//!   source (`CsvDataSource`, `InMemoryDataSource`, `ParquetDataSource`) holds only
-//!   `Send + Sync` data — `String`, `Option<Schema>`, and arrow batches — so the
-//!   bound is satisfied automatically.
+//!   `PhysicalPlan`, which requires `Send + Sync` so `ParallelContext` can
+//!   hand plans to rayon workers (see the `physical_plan` module note). Every
+//!   concrete source (`CsvDataSource`, `InMemoryDataSource`,
+//!   `ParquetDataSource`) holds only `Send + Sync` data — `String`,
+//!   `Option<Schema>`, and arrow batches — so the bound is satisfied
+//!   automatically.
 
 use datatypes::{RecordBatch, Schema};
 
@@ -30,8 +26,7 @@ pub trait DataSource: Send + Sync {
     /// Type-erased self-reference for runtime downcasting (see
     /// `physical_plan::PhysicalPlan::as_any`). `protobuf` — the only caller
     /// that needs to branch on the concrete data source — uses
-    /// `ds.as_any().downcast_ref::<CsvDataSource>()` etc. Reproduces Kotlin's
-    /// `when (ds) { is CsvDataSource -> … }` via the standard Rust idiom that
-    /// DataFusion also uses for `TableProvider`.
+    /// `ds.as_any().downcast_ref::<CsvDataSource>()` etc. This is the standard
+    /// Rust idiom that DataFusion also uses for `TableProvider`.
     fn as_any(&self) -> &dyn std::any::Any;
 }

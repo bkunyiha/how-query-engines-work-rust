@@ -1,23 +1,14 @@
-//! Port of `kquery/physical-plan/src/main/kotlin/ShuffleReaderExec.kt`.
 //!
 //! Reads shuffle output from one or more [`ShuffleLocation`]s at the start
 //! of a stage that consumes a previous stage's output (local files for data
 //! on this executor, Arrow Flight for remote executors).
 //!
-//! ## Single-surface execute(ctx) — idiomatic Rust forced substitution
+//! ## Single-surface execute(ctx)
 //!
-//! kquery's `ShuffleReaderExec.execute()` throws
-//! `UnsupportedOperationException` and exposes a sibling
-//! `executeWithContext(executorId, shuffleManager, flightClient)` that
-//! takes the runtime state separately. That's a Kotlin runtime-contract
-//! pattern (throw + sibling method). The Rust port replaces it with a
-//! parameter on the trait method itself — the compiler now refuses to
-//! compile a call site that doesn't supply a context. There is no
-//! `execute_with_context` sibling; the trait `execute(ctx)` *is* the
-//! context-aware entry point.
-//!
-//! Documented in `TRANSLATION_NOTES.md` → Module: physical-plan ("forced
-//! substitution: panic + sibling method → trait parameter").
+//! Every `PhysicalPlan` operator takes the executor context as a parameter on
+//! the trait method itself — the compiler refuses to compile a call site that
+//! doesn't supply one. There is no `execute_with_context` sibling; the trait
+//! `execute(ctx)` *is* the context-aware entry point.
 //!
 //! ## Local vs remote
 //! For each `shuffle_locations[i]`, the reader compares
@@ -34,7 +25,7 @@ use crate::shuffle_location::ShuffleLocation;
 use datatypes::{RecordBatch, Schema};
 use std::sync::Arc;
 
-/// Reads shuffle data from a set of locations. Kotlin `ShuffleReaderExec`.
+/// Reads shuffle data from a set of locations.
 pub struct ShuffleReaderExec {
     pub shuffle_schema: Schema,
     pub shuffle_locations: Vec<ShuffleLocation>,
@@ -79,10 +70,10 @@ impl PhysicalPlan for ShuffleReaderExec {
     /// Read every shuffle location in order and yield the resulting
     /// `RecordBatch`es as a single iterator.
     ///
-    /// **Local reads only** — a location whose `executor_id` doesn't match
-    /// `ctx.executor_id` triggers `unimplemented!()`. Remote reads need a
-    /// Flight client wired into `ExecutorContext`; deferred until that's
-    /// added (Phase 2).
+    /// **Local reads only.** A location whose `executor_id` doesn't match
+    /// `ctx.executor_id` triggers `unimplemented!()`. Remote reads would
+    /// require a Flight client field on `ExecutorContext`; not currently
+    /// implemented.
     fn execute(&self, ctx: &ExecutorContext) -> Box<dyn Iterator<Item = RecordBatch>> {
         // Validate all locations are local up front so the panic — if one
         // belongs to another executor — fires before any disk I/O.
@@ -91,8 +82,7 @@ impl PhysicalPlan for ShuffleReaderExec {
                 unimplemented!(
                     "ShuffleReaderExec: remote shuffle reads require an Arrow Flight \
                      client. Location belongs to executor '{}' but this executor is \
-                     '{}'. Remote reads need a Flight client field on ExecutorContext \
-                     (Phase 2).",
+                     '{}'. Remote reads need a Flight client field on ExecutorContext.",
                     loc.executor_id,
                     ctx.executor_id
                 );
@@ -192,7 +182,10 @@ mod tests {
         let reader = ShuffleReaderExec::new(schema, locations);
         let read_rows: usize = reader.execute(&ctx).map(|b| b.num_rows()).sum();
 
-        assert_eq!(read_rows, input_rows, "writer→reader must preserve all rows");
+        assert_eq!(
+            read_rows, input_rows,
+            "writer→reader must preserve all rows"
+        );
         ctx.shuffle_manager.cleanup_all();
     }
 
@@ -216,7 +209,11 @@ mod tests {
 
         let (input_rows, locations, schema) =
             write_employee_shuffle(&ctx, "test-job-reader-single", 1);
-        assert_eq!(locations.len(), 1, "single partition writer emits 1 location");
+        assert_eq!(
+            locations.len(),
+            1,
+            "single partition writer emits 1 location"
+        );
 
         let reader = ShuffleReaderExec::new(schema, locations);
         let read_rows: usize = reader.execute(&ctx).map(|b| b.num_rows()).sum();
@@ -231,14 +228,7 @@ mod tests {
         let base = temp_dir("reader-remote");
         let ctx = ExecutorContext::new("exec-A", "127.0.0.1", 50099, &base);
 
-        let remote_loc = ShuffleLocation::new(
-            "test-job-remote",
-            0,
-            0,
-            "exec-B",
-            "10.0.0.2",
-            50099,
-        );
+        let remote_loc = ShuffleLocation::new("test-job-remote", 0, 0, "exec-B", "10.0.0.2", 50099);
         let reader = ShuffleReaderExec::new(employee_ds().schema(), vec![remote_loc]);
         let _ = reader.execute(&ctx);
     }

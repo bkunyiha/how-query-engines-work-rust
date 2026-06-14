@@ -1,4 +1,3 @@
-//! Port of `kquery/logical-plan/src/main/kotlin/Selection.kt`.
 //!
 //! Logical plan representing a selection (a.k.a. filter) against an input.
 //! Selection does not change the schema of its input.
@@ -16,7 +15,10 @@ pub struct Selection {
 
 impl Selection {
     pub fn new(input: LogicalPlan, expr: LogicalExpr) -> Self {
-        Self { input: Box::new(input), expr }
+        Self {
+            input: Box::new(input),
+            expr,
+        }
     }
 
     pub fn schema(&self) -> Schema {

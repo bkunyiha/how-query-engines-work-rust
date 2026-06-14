@@ -1,35 +1,33 @@
-//! Port of `kquery/physical-plan/src/main/kotlin/HashJoinExec.kt`.
 //!
 //! Hash equi-join. Builds a hash table from the **right** (build) side keyed by
 //! the right join columns, then probes it with each **left** (probe) row. Supports
 //! `Inner`, `Left`, and `Right` joins (the three variants of `logical_plan::JoinType`).
 //!
-//! ## Translation notes
-//! - **Join keys / rows are `Vec<ScalarValue>`.** Kotlin uses `List<Any?>`; the hash
-//!   table is keyed by [`crate::row_key::RowKey`] — the same float-aware key helper
+//! ## Implementation notes
+//! - **Join keys / rows are `Vec<ScalarValue>`.** The hash table is keyed by
+//!   [`crate::row_key::RowKey`] — the same float-aware key helper
 //!   `HashAggregateExec` uses for group keys (§4.6 asked for a shared helper).
-//!   Kotlin's `normalizeValue` (ByteArray → String) is unnecessary here: string
-//!   columns already surface as `ScalarValue::Utf8`.
+//!   String columns surface as `ScalarValue::Utf8`, so no extra normalization
+//!   is needed.
 //! - **`rightColumnsToExclude`** drops duplicate join-key columns from the right
 //!   side of the combined row (so an `id = id` join doesn't emit `id` twice).
-//! - **Eager, not lazy.** Kotlin returns a lazy `sequence { … }`. The build side must
-//!   be fully materialized first anyway; the Rust port collects all output batches
-//!   and returns `outputs.into_iter()`. Same results, simpler control flow.
+//! - **Eager, not lazy.** The build side must be fully materialized first anyway;
+//!   the join collects all output batches and returns `outputs.into_iter()`.
 //! - **Right join** re-scans the left side to find which right keys matched, then
-//!   emits the unmatched right rows with nulls on the left — exactly as Kotlin does.
+//!   emits the unmatched right rows with nulls on the left.
 
 use crate::executor_context::ExecutorContext;
 use crate::physical_plan::PhysicalPlan;
 use crate::row_key::RowKey;
 use datatypes::{
-    record_batch, ArrowFieldVector, ArrowVectorBuilder, ColumnVector, RecordBatch, ScalarValue,
-    Schema,
+    ArrowFieldVector, ArrowVectorBuilder, ColumnVector, RecordBatch, ScalarValue, Schema,
+    record_batch,
 };
 use logical_plan::JoinType;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-/// Hash join physical operator. Kotlin `HashJoinExec`.
+/// Hash join physical operator.
 pub struct HashJoinExec {
     pub left: Arc<dyn PhysicalPlan>,
     pub right: Arc<dyn PhysicalPlan>,
@@ -63,8 +61,12 @@ impl HashJoinExec {
     }
 
     /// Concatenate a left row with a right row, dropping the right columns listed
-    /// in `right_columns_to_exclude` (the duplicate join keys). Kotlin `combineRows`.
-    fn combine_rows(&self, left_row: &[ScalarValue], right_row: &[ScalarValue]) -> Vec<ScalarValue> {
+    /// in `right_columns_to_exclude` (the duplicate join keys).
+    fn combine_rows(
+        &self,
+        left_row: &[ScalarValue],
+        right_row: &[ScalarValue],
+    ) -> Vec<ScalarValue> {
         let mut result: Vec<ScalarValue> = left_row.to_vec();
         for (i, value) in right_row.iter().enumerate() {
             if !self.right_columns_to_exclude.contains(&i) {
@@ -75,7 +77,6 @@ impl HashJoinExec {
     }
 
     /// Build an output batch from assembled rows, typed by the output schema.
-    /// Kotlin `createBatch`.
     fn create_batch(&self, rows: &[Vec<ScalarValue>]) -> RecordBatch {
         let mut builders: Vec<ArrowVectorBuilder> = self
             .schema
@@ -261,14 +262,14 @@ impl std::fmt::Display for HashJoinExec {
 
 #[cfg(test)]
 mod tests {
-    //! Rust-port join tests. The Kotlin operator tests live in the SQL/query-planner
-    //! suites; here we drive `HashJoinExec` directly via a tiny in-memory
-    //! `PhysicalPlan` (the `query-planner` that normally builds a join is module 7).
+    //! Join tests. These drive `HashJoinExec` directly via a tiny in-memory
+    //! `PhysicalPlan`; the `query-planner` that normally builds a join is
+    //! covered in module 7.
     use super::*;
     use arrow_array::{ArrayRef, Int64Array, StringArray};
     use arrow_schema::{Field as ArrowField, Schema as ArrowSchema};
-    use datatypes::arrow_types::{INT64_TYPE, STRING_TYPE};
     use datatypes::Field;
+    use datatypes::arrow_types::{INT64_TYPE, STRING_TYPE};
     use std::sync::Arc;
 
     /// A `PhysicalPlan` that simply replays preset batches.
@@ -391,7 +392,15 @@ mod tests {
             out_schema(),
             HashSet::from([0]),
         );
-        let mut rows = collect_rows(join.execute(&ExecutorContext::new("test", "localhost", 0, "/tmp/rquery-test-ignored")).collect());
+        let mut rows = collect_rows(
+            join.execute(&ExecutorContext::new(
+                "test",
+                "localhost",
+                0,
+                "/tmp/rquery-test-ignored",
+            ))
+            .collect(),
+        );
         rows.sort();
         assert_eq!(
             rows,
@@ -413,7 +422,15 @@ mod tests {
             out_schema(),
             HashSet::from([0]),
         );
-        let mut rows = collect_rows(join.execute(&ExecutorContext::new("test", "localhost", 0, "/tmp/rquery-test-ignored")).collect());
+        let mut rows = collect_rows(
+            join.execute(&ExecutorContext::new(
+                "test",
+                "localhost",
+                0,
+                "/tmp/rquery-test-ignored",
+            ))
+            .collect(),
+        );
         rows.sort();
         assert_eq!(
             rows,

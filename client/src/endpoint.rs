@@ -1,13 +1,9 @@
 //! Per-server connection target: hostname + port, plus a helper that builds
 //! the `http://host:port` URL tonic's `Channel::from_shared` needs.
 //!
-//! No Kotlin counterpart in `kquery/client/` — `Client.kt` takes `host` and
-//! `port` as separate constructor arguments. The Rust port bundles them into
-//! one `Endpoint` value so `Client`'s constructor takes a single descriptor
-//! rather than two scalars, and so the `FlightExecutorClient`'s
-//! `executor_id → Endpoint` map has a sensible value type. The Kotlin shape
-//! is recoverable: an `Endpoint` is just `(host, port)` and Rust pattern
-//! destructuring or two field reads round-trip the same information.
+//! Bundling host and port into a single `Endpoint` value lets `Client::new`
+//! take a single descriptor and gives `FlightExecutorClient`'s
+//! `executor_id → Endpoint` map a sensible value type.
 
 use distributed::ExecutorConfig;
 

@@ -1,8 +1,5 @@
-//! Port of `kquery/datatypes/src/main/kotlin/ShuffleLocation.kt`.
-//!
 //! Identifies where a shuffle output lives — job + stage + partition + executor.
-//! The Kotlin source includes a protobuf message comment showing the equivalent
-//! wire representation; we preserve that comment.
+//! The protobuf message comment below shows the equivalent wire representation.
 
 /*
  message ShuffleLocation {
@@ -15,19 +12,19 @@
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ShuffleLocation {
-    pub job_uuid:      String,
-    pub stage_id:      i32,
-    pub partition_id:  i32,
+    pub job_uuid: String,
+    pub stage_id: i32,
+    pub partition_id: i32,
     pub execution_uuid: String,
 }
 
 impl ShuffleLocation {
-    pub fn new(
-        job_uuid: String,
-        stage_id: i32,
-        partition_id: i32,
-        execution_uuid: String,
-    ) -> Self {
-        Self { job_uuid, stage_id, partition_id, execution_uuid }
+    pub fn new(job_uuid: String, stage_id: i32, partition_id: i32, execution_uuid: String) -> Self {
+        Self {
+            job_uuid,
+            stage_id,
+            partition_id,
+            execution_uuid,
+        }
     }
 }

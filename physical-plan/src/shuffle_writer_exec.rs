@@ -1,4 +1,3 @@
-//! Port of `kquery/physical-plan/src/main/kotlin/ShuffleWriterExec.kt`.
 //!
 //! Executes its input and writes the output to local shuffle files, partitioned by
 //! the hash of a set of partition expressions. Used at shuffle boundaries in
@@ -13,7 +12,6 @@
 //! - [`Self::write_shuffle`] is the real entry point. It takes an
 //!   [`ExecutorContext`] (built once per executor binary in `flight-server`)
 //!   and returns the [`ShuffleLocation`]s the upstream stage can read from.
-//!   Kotlin: `executeAndWriteShuffle(executorId, host, port, shuffleManager)`.
 //!
 //! ## Hash-partition algorithm
 //! For each input batch, evaluate the partition expressions row-by-row, hash
@@ -27,22 +25,22 @@
 //!
 //! ## Empty-partition policy
 //! Empty partitions get **no file** and **no `ShuffleLocation`**. This
-//! matches `ShuffleManager::write_partition`'s pre-existing no-op-on-empty
-//! contract and Kotlin's behaviour. The downstream reader sees only the
-//! locations that actually contain data; the scheduler's location list is
-//! always the union across all tasks, so a per-task gap is fine.
+//! matches `ShuffleManager::write_partition`'s no-op-on-empty contract. The
+//! downstream reader sees only the locations that actually contain data; the
+//! scheduler's location list is always the union across all tasks, so a
+//! per-task gap is fine.
 
 use crate::executor_context::ExecutorContext;
 use crate::expressions::Expression;
 use crate::physical_plan::PhysicalPlan;
 use crate::row_key::RowKey;
 use crate::shuffle_location::ShuffleLocation;
-use datatypes::{record_batch, ArrowVectorBuilder, ColumnVector, RecordBatch, ScalarValue, Schema};
+use datatypes::{ArrowVectorBuilder, ColumnVector, RecordBatch, ScalarValue, Schema, record_batch};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-/// Partitions input by hash and writes shuffle output. Kotlin `ShuffleWriterExec`.
+/// Partitions input by hash and writes shuffle output.
 pub struct ShuffleWriterExec {
     pub input: Arc<dyn PhysicalPlan>,
     pub partition_expr: Vec<Arc<dyn Expression>>,
@@ -86,7 +84,6 @@ impl ShuffleWriterExec {
     /// `flight-server` downcasts to `ShuffleWriterExec` and calls this
     /// method directly.
     ///
-    /// Kotlin: `executeAndWriteShuffle(executorId, executorHost, executorPort, shuffleManager)`.
     pub fn write_shuffle(&self, ctx: &ExecutorContext) -> Vec<ShuffleLocation> {
         let partition_count = self.partition_count as usize;
         // Captured once — output schema equals input schema (a shuffle preserves
@@ -94,8 +91,7 @@ impl ShuffleWriterExec {
         let schema = self.input.schema();
 
         // Per-partition accumulators. Index by partition_id directly.
-        let mut buffers: Vec<Vec<RecordBatch>> =
-            (0..partition_count).map(|_| Vec::new()).collect();
+        let mut buffers: Vec<Vec<RecordBatch>> = (0..partition_count).map(|_| Vec::new()).collect();
 
         // Pull each input batch, decide each row's target partition, push the
         // filtered sub-batch into that partition's accumulator.
@@ -109,10 +105,10 @@ impl ShuffleWriterExec {
             let row_count = batch.num_rows();
             let targets = compute_targets(&key_columns, row_count, partition_count);
 
-            for partition_id in 0..partition_count {
+            for (partition_id, buffer) in buffers.iter_mut().enumerate() {
                 let take: Vec<bool> = targets.iter().map(|&t| t == partition_id).collect();
                 if take.iter().any(|&b| b) {
-                    buffers[partition_id].push(select_rows(&batch, &schema, &take));
+                    buffer.push(select_rows(&batch, &schema, &take));
                 }
             }
         }
@@ -270,11 +266,9 @@ impl std::fmt::Display for ShuffleWriterExec {
 
 #[cfg(test)]
 mod tests {
-    //! Tests for `write_shuffle` — there is no Kotlin counterpart
-    //! (kquery exercises this path only end-to-end through `KQueryFlightProducer`).
-    //! Each test uses a per-test tempdir keyed by nanoseconds so parallel
-    //! `cargo test` runs don't collide on disk; `cleanup_all` runs at the end
-    //! of each test to keep `/tmp/` tidy.
+    //! Tests for `write_shuffle`. Each test uses a per-test tempdir keyed by
+    //! nanoseconds so parallel `cargo test` runs don't collide on disk;
+    //! `cleanup_all` runs at the end of each test to keep `/tmp/` tidy.
 
     use super::*;
     use crate::column_expression::ColumnExpression;
@@ -403,7 +397,10 @@ mod tests {
 
         let locations = writer.write_shuffle(&ctx);
 
-        assert!(locations.is_empty(), "empty input must produce no locations");
+        assert!(
+            locations.is_empty(),
+            "empty input must produce no locations"
+        );
 
         // No files should have been created (the no-op-on-empty contract of
         // ShuffleManager::write_partition isn't even reached — we don't call

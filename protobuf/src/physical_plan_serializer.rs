@@ -1,5 +1,3 @@
-//! Port of `kquery/protobuf/src/main/kotlin/PhysicalPlanSerializer.kt`.
-//!
 //! `PhysicalPlan` → `pb::PhysicalPlanNode`, `Expression` → `pb::PhysicalExprNode`,
 //! `AggregateExpression` → `pb::PhysicalAggregateExprNode`, `Schema` / `Field` →
 //! their proto equivalents, plus `ShuffleLocation` and `Task` for distributed
@@ -22,19 +20,19 @@
 //! Equivalent of DataFusion's `datafusion/proto/src/physical_plan/to_proto.rs`,
 //! down to the verb (`serialize_*`).
 //!
-//! ## Translation notes
-//! - Kotlin's `when (plan) { is XExec -> … }` becomes the standard Rust idiom
-//!   `plan.as_any().downcast_ref::<XExec>()` (same pattern DataFusion uses for
-//!   `ExecutionPlan` / `PhysicalExpr`). The two boolean and math
-//!   *family-narrowing* accessors — `Expression::as_boolean_expression` and
-//!   `as_math_expression` — are kept because they return `&dyn BooleanExpression`
-//!   / `&dyn MathExpression` so the serializer can read `left()/right()/
-//!   op_name()` uniformly across all 8 boolean / 5 math operators without
-//!   per-operator dispatch. Pure leaf dispatches (column, literals, cast, the
-//!   five aggregates, CSV vs Parquet data sources) all go through `as_any`.
+//! ## Notes
+//! - Concrete-operator dispatch uses `plan.as_any().downcast_ref::<XExec>()`
+//!   (same pattern DataFusion uses for `ExecutionPlan` / `PhysicalExpr`).
+//!   Two family-narrowing accessors — `Expression::as_boolean_expression`
+//!   and `as_math_expression` — return `&dyn BooleanExpression` /
+//!   `&dyn MathExpression` so the serializer can read
+//!   `left()/right()/op_name()` uniformly across all 8 boolean and 5 math
+//!   operators without per-operator dispatch. Pure leaf dispatches (column,
+//!   literals, cast, the five aggregates, CSV vs Parquet data sources) all
+//!   go through `as_any`.
 //! - Boolean and math binary operators share a single arm because both
 //!   serialise to `pb::PhysicalBinaryExprNode { l, r, op }`; each family's
-//!   `op_name()` method (added alongside the downcast accessors) supplies the
+//!   `op_name()` method (alongside the downcast accessors) supplies the
 //!   wire-format op string ("eq", "add", etc.).
 //! - **`ShuffleLocation` is `physical_plan::ShuffleLocation`** (6 fields,
 //!   matches the proto exactly), not the older 4-field
@@ -51,7 +49,6 @@ use physical_plan::{
 use arrow_schema::DataType;
 
 /// `&dyn PhysicalPlan` → `pb::PhysicalPlanNode`.
-/// Kotlin `fun toProto(plan: PhysicalPlan): PhysicalPlanNode`.
 pub fn serialize_physical_plan(plan: &dyn PhysicalPlan) -> pb::PhysicalPlanNode {
     use pb::physical_plan_node::PlanType;
     let any = plan.as_any();
@@ -100,58 +97,54 @@ pub fn serialize_physical_plan(plan: &dyn PhysicalPlan) -> pb::PhysicalPlanNode 
     }
     if let Some(agg) = any.downcast_ref::<physical_plan::HashAggregateExec>() {
         return pb::PhysicalPlanNode {
-            plan_type: Some(PlanType::HashAggregate(Box::new(pb::HashAggregateExecNode {
-                input: Some(Box::new(serialize_physical_plan(agg.input.as_ref()))),
-                group_expr: agg
-                    .group_expr
-                    .iter()
-                    .map(|e| serialize_physical_expr(e.as_ref()))
-                    .collect(),
-                aggregate_expr: agg
-                    .aggregate_expr
-                    .iter()
-                    .map(|a| serialize_physical_aggr_expr(a.as_ref()))
-                    .collect(),
-                schema: Some((&agg.schema).into()),
-                mode: aggregate_mode_to_proto(&agg.mode) as i32,
-            }))),
+            plan_type: Some(PlanType::HashAggregate(Box::new(
+                pb::HashAggregateExecNode {
+                    input: Some(Box::new(serialize_physical_plan(agg.input.as_ref()))),
+                    group_expr: agg
+                        .group_expr
+                        .iter()
+                        .map(|e| serialize_physical_expr(e.as_ref()))
+                        .collect(),
+                    aggregate_expr: agg
+                        .aggregate_expr
+                        .iter()
+                        .map(|a| serialize_physical_aggr_expr(a.as_ref()))
+                        .collect(),
+                    schema: Some((&agg.schema).into()),
+                    mode: aggregate_mode_to_proto(&agg.mode) as i32,
+                },
+            ))),
         };
     }
     if let Some(sw) = any.downcast_ref::<physical_plan::ShuffleWriterExec>() {
         return pb::PhysicalPlanNode {
-            plan_type: Some(PlanType::ShuffleWriter(Box::new(pb::ShuffleWriterExecNode {
-                input: Some(Box::new(serialize_physical_plan(sw.input.as_ref()))),
-                partition_expr: sw
-                    .partition_expr
-                    .iter()
-                    .map(|e| serialize_physical_expr(e.as_ref()))
-                    .collect(),
-                job_uuid: sw.job_uuid.clone(),
-                stage_id: sw.stage_id,
-                partition_count: sw.partition_count,
-            }))),
+            plan_type: Some(PlanType::ShuffleWriter(Box::new(
+                pb::ShuffleWriterExecNode {
+                    input: Some(Box::new(serialize_physical_plan(sw.input.as_ref()))),
+                    partition_expr: sw
+                        .partition_expr
+                        .iter()
+                        .map(|e| serialize_physical_expr(e.as_ref()))
+                        .collect(),
+                    job_uuid: sw.job_uuid.clone(),
+                    stage_id: sw.stage_id,
+                    partition_count: sw.partition_count,
+                },
+            ))),
         };
     }
     if let Some(sr) = any.downcast_ref::<physical_plan::ShuffleReaderExec>() {
         return pb::PhysicalPlanNode {
             plan_type: Some(PlanType::ShuffleReader(pb::ShuffleReaderExecNode {
                 schema: Some((&sr.shuffle_schema).into()),
-                shuffle_locations: sr
-                    .shuffle_locations
-                    .iter()
-                    .map(Into::into)
-                    .collect(),
+                shuffle_locations: sr.shuffle_locations.iter().map(Into::into).collect(),
             })),
         };
     }
-    panic!(
-        "Cannot serialize physical operator to protobuf: {}",
-        plan
-    )
+    panic!("Cannot serialize physical operator to protobuf: {}", plan)
 }
 
 /// `&dyn Expression` → `pb::PhysicalExprNode`.
-/// Kotlin `fun toProto(expr: Expression): PhysicalExprNode`.
 pub fn serialize_physical_expr(expr: &dyn Expression) -> pb::PhysicalExprNode {
     use pb::physical_expr_node::ExprType;
     let any = expr.as_any();
@@ -187,16 +180,14 @@ pub fn serialize_physical_expr(expr: &dyn Expression) -> pb::PhysicalExprNode {
             arrow_type: data_type_to_proto(&c.data_type) as i32,
         }))
     } else {
-        panic!(
-            "Cannot serialize physical expression to protobuf: {}",
-            expr
-        )
+        panic!("Cannot serialize physical expression to protobuf: {}", expr)
     };
-    pb::PhysicalExprNode { expr_type: Some(expr_type) }
+    pb::PhysicalExprNode {
+        expr_type: Some(expr_type),
+    }
 }
 
 /// `&dyn AggregateExpression` → `pb::PhysicalAggregateExprNode`.
-/// Kotlin `fun toProtoAggr(expr: AggregateExpression)`.
 pub fn serialize_physical_aggr_expr(
     expr: &dyn AggregateExpression,
 ) -> pb::PhysicalAggregateExprNode {
@@ -224,7 +215,7 @@ pub fn serialize_physical_aggr_expr(
     }
 }
 
-/// `&Task` → `pb::TaskInfo`. Kotlin `fun toProto(task: Task)`.
+/// `&Task` → `pb::TaskInfo`.
 pub fn serialize_task(task: &Task) -> pb::TaskInfo {
     pb::TaskInfo {
         job_uuid: task.job_uuid.clone(),
@@ -243,7 +234,7 @@ pub fn serialize_task(task: &Task) -> pb::TaskInfo {
 // type-conversion machinery in Rust.
 // ---------------------------------------------------------------------------
 
-/// `&Schema` → `pb::Schema`. Kotlin `fun toProto(schema: Schema)`.
+/// `&Schema` → `pb::Schema`.
 impl From<&Schema> for pb::Schema {
     fn from(schema: &Schema) -> Self {
         pb::Schema {
@@ -252,19 +243,19 @@ impl From<&Schema> for pb::Schema {
     }
 }
 
-/// `&Field` → `pb::Field`. Kotlin `fun toProto(field: Field)`.
+/// `&Field` → `pb::Field`.
 impl From<&Field> for pb::Field {
     fn from(field: &Field) -> Self {
         pb::Field {
             name: field.name.clone(),
             arrow_type: data_type_to_proto(&field.data_type) as i32,
-            nullable: true, // matches Kotlin's Field(name, FieldType(true, dt, null))
+            nullable: true,
             children: vec![],
         }
     }
 }
 
-/// `&ShuffleLocation` → `pb::ShuffleLocation`. Kotlin `fun toProto(loc: ShuffleLocation)`.
+/// `&ShuffleLocation` → `pb::ShuffleLocation`.
 /// Uses the 6-field `physical_plan::ShuffleLocation` (there is also a
 /// 4-field `datatypes::ShuffleLocation` left over from earlier porting;
 /// the physical_plan one is the production type and matches the proto

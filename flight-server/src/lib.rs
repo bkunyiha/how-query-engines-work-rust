@@ -7,10 +7,6 @@
 //! method runs the requested distributed task or streams a final-stage
 //! result, and the reply goes back over gRPC.
 //!
-//! ## Kotlin source
-//! Faithful port of `kquery/flight-server/src/main/kotlin/io/`:
-//! `FlightServer.kt`, `KQueryFlightProducer.kt`.
-//!
 //! ## What this crate provides
 //!
 //! - [`r_query_flight_producer::RQueryFlightProducer`] — the
@@ -27,10 +23,5 @@
 //! host, port, and an `Arc<ShuffleManager>`) and hands it to the producer
 //! for the lifetime of the process.
 
-// ==============================================================
-// Per-file modules — one for each upstream Kotlin source file.
-// `KQueryFlightProducer.kt` rebrands to `r_query_flight_producer.rs`
-// per the project-name-prefix rule (K for Kotlin → R for Rust).
-// ==============================================================
-pub mod r_query_flight_producer;
 pub mod flight_server;
+pub mod r_query_flight_producer;

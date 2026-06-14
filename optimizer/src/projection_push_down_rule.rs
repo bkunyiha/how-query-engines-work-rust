@@ -1,19 +1,16 @@
-//! Port of `kquery/optimizer/src/main/kotlin/ProjectionPushDownRule.kt`.
-//!
 //! Pushes the set of referenced columns down to the `Scan`, so the data source
 //! reads only the columns the rest of the query actually needs.
 //!
-//! ## Translation note
-//! Kotlin's `when (plan)` needed an `else -> throw` because `LogicalPlan` is an
-//! open `interface`. Here `LogicalPlan` is a closed `enum`, so the `match` is
-//! exhaustive over all six operators and needs no catch-all (per §3.1).
+//! `LogicalPlan` is a closed `enum`, so the `match` is exhaustive over all
+//! six operators and needs no catch-all (per §3.1).
 
 use logical_plan::{Aggregate, Join, Limit, LogicalPlan, Projection, Scan, Selection};
 use std::collections::HashSet;
+use std::sync::Arc;
 
-use crate::optimizer::{aggregate_inner, extract_columns, extract_columns_list, OptimizerRule};
+use crate::optimizer::{OptimizerRule, aggregate_inner, extract_columns, extract_columns_list};
 
-/// The one optimisation rule so far. Kotlin: `class ProjectionPushDownRule`.
+/// The one optimisation rule so far.
 pub struct ProjectionPushDownRule;
 
 impl OptimizerRule for ProjectionPushDownRule {
@@ -23,7 +20,7 @@ impl OptimizerRule for ProjectionPushDownRule {
 }
 
 /// Rewrite `plan`, accumulating referenced column names on the way down and
-/// trimming the `Scan`'s projection at the leaf. Kotlin: `pushDown`.
+/// trimming the `Scan`'s projection at the leaf.
 fn push_down(plan: &LogicalPlan, column_names: &mut HashSet<String>) -> LogicalPlan {
     match plan {
         LogicalPlan::Projection(p) => {
@@ -38,8 +35,8 @@ fn push_down(plan: &LogicalPlan, column_names: &mut HashSet<String>) -> LogicalP
         }
         LogicalPlan::Aggregate(a) => {
             extract_columns_list(&a.group_expr, &a.input, column_names);
-            // Kotlin: `extractColumns(aggregateExpr.map { it.expr }, …)` — collect
-            // the columns referenced by each aggregate's *argument* expression.
+            // Collect the columns referenced by each aggregate's *argument*
+            // expression.
             for agg in &a.aggregate_expr {
                 extract_columns(aggregate_inner(agg), &a.input, column_names);
             }
@@ -84,23 +81,30 @@ fn push_down(plan: &LogicalPlan, column_names: &mut HashSet<String>) -> LogicalP
                 .filter(|name| column_names.contains(name))
                 .collect();
             pushdown.sort();
-            LogicalPlan::Scan(Scan::new(s.path.clone(), s.data_source.clone(), pushdown))
+            LogicalPlan::Scan(Scan::new(
+                s.path.clone(),
+                Arc::clone(&s.data_source),
+                pushdown,
+            ))
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    //! Port of `kquery/optimizer/src/test/kotlin/OptimizerTest.kt`.
     use super::*;
     use datasource::CsvDataSource;
-    use logical_plan::{col, count, format, lit_string, max, min, DataFrame};
+    use logical_plan::{DataFrame, col, count, format, lit_string, max, min};
     use std::sync::Arc;
 
-    /// `employee` table scanned with no projection yet. Kotlin: `csv()`.
+    /// `employee` table scanned with no projection yet.
     fn csv() -> DataFrame {
         let path = "../testdata/employee.csv";
-        let scan = Scan::new("employee", Arc::new(CsvDataSource::new(path, None, true, 1024)), vec![]);
+        let scan = Scan::new(
+            "employee",
+            Arc::new(CsvDataSource::new(path, None, true, 1024)),
+            vec![],
+        );
         DataFrame::new(LogicalPlan::Scan(scan))
     }
 

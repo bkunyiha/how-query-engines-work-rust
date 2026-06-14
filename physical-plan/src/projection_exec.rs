@@ -1,4 +1,3 @@
-//! Port of `kquery/physical-plan/src/main/kotlin/ProjectionExec.kt`.
 //!
 //! Evaluates a list of expressions against each input batch and assembles the
 //! results into an output batch with the projection's schema.
@@ -6,12 +5,11 @@
 use crate::executor_context::ExecutorContext;
 use crate::expressions::Expression;
 use crate::physical_plan::PhysicalPlan;
-use datatypes::{record_batch, ColumnVector, RecordBatch, Schema};
+use datatypes::{ColumnVector, RecordBatch, Schema, record_batch};
 use std::fmt;
 use std::sync::Arc;
 
-/// Execute a projection. Kotlin
-/// `ProjectionExec(val input: PhysicalPlan, val schema: Schema, val expr: List<Expression>)`.
+/// Execute a projection.
 ///
 /// The output schema is supplied explicitly (the query planner computes it) — a
 /// projection can rename or compute columns, so it cannot always be derived from
@@ -23,7 +21,11 @@ pub struct ProjectionExec {
 }
 
 impl ProjectionExec {
-    pub fn new(input: Arc<dyn PhysicalPlan>, schema: Schema, expr: Vec<Arc<dyn Expression>>) -> Self {
+    pub fn new(
+        input: Arc<dyn PhysicalPlan>,
+        schema: Schema,
+        expr: Vec<Arc<dyn Expression>>,
+    ) -> Self {
         Self {
             input,
             schema,
@@ -80,11 +82,7 @@ impl PhysicalPlan for ProjectionExec {
         self: Arc<Self>,
         children: Vec<Arc<dyn PhysicalPlan>>,
     ) -> Arc<dyn PhysicalPlan> {
-        assert_eq!(
-            children.len(),
-            1,
-            "ProjectionExec expects exactly 1 child"
-        );
+        assert_eq!(children.len(), 1, "ProjectionExec expects exactly 1 child");
         Arc::new(ProjectionExec::new(
             children.into_iter().next().unwrap(),
             self.schema.clone(),
@@ -95,8 +93,7 @@ impl PhysicalPlan for ProjectionExec {
 
 impl fmt::Display for ProjectionExec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Kotlin: "ProjectionExec: $expr", where `expr` is a List whose toString is
-        // "[a, b, c]". Mirror that bracketed, comma-separated form.
+        // Render as `ProjectionExec: [a, b, c]` — bracketed, comma-separated.
         let exprs: Vec<String> = self.expr.iter().map(|e| e.to_string()).collect();
         write!(f, "ProjectionExec: [{}]", exprs.join(", "))
     }

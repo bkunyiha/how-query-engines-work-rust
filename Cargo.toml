@@ -2,13 +2,9 @@
 #
 # Faithful Rust port of `kquery`, the Kotlin query engine from Andy Grove's
 # "How Query Engines Work" (2nd edition). See README.md for the full context.
-#
-# Workspace decisions are documented in `ARCHITECTURE.md` §1 and §8 (definition of done).
-
 [workspace]
 resolver = "2"
-# 15 crates, mirroring the upstream kquery Gradle modules 1:1.
-# Build order (per ARCHITECTURE.md §4.5) matches the listing order below.
+# 15 crates. Build order matches the listing order below.
 members = [
     "datatypes",
     "datasource",
@@ -31,7 +27,7 @@ members = [
 edition       = "2024"
 license       = "Apache-2.0"
 version       = "0.1.0"
-repository    = "https://github.com/bkunyiha/how-query-engines-work-rust"   # update before `git remote add`
+repository    = "https://github.com/bkunyiha/how-query-engines-work-rust"
 authors       = ["Bill Kunyiha <bkunyiha@gmail.com>"]
 rust-version  = "1.85"
 
@@ -42,54 +38,44 @@ arrow-array   = "55"
 arrow-schema  = "55"
 arrow-flight  = "55"
 # Arrow IPC reader/writer — used by `physical-plan::ShuffleManager` to
-# serialise per-partition shuffle output to local files. Same kquery shape
-# as the Kotlin `ArrowFileWriter`/`ArrowFileReader` calls.
+# serialise per-partition shuffle output to local files.
 arrow-ipc     = "55"
 parquet       = "55"
 
-# Data-parallelism — the faithful Rust substitution for Kotlin coroutines in
-# `ParallelContext` (ARCHITECTURE.md §3.9 / §4.8). CPU-bound work on a work-stealing
-# thread pool, NOT tokio (tokio is for I/O-bound concurrency).
+# Data-parallelism — used by `ParallelContext` for CPU-bound work on a
+# work-stealing thread pool. NOT tokio (tokio is for I/O-bound concurrency).
 rayon         = "1"
 
-# Random number generation — needed by the `fuzzer` crate as the analogue of
-# Kotlin's `kotlin.random.Random`. `StdRng::seed_from_u64(0)` matches the Kotlin
-# `Random(0)` seeding pattern. The RNG sequence will NOT byte-match Kotlin's
-# (different algorithms); the fuzzer is used for differential testing inside Rust.
+# Random number generation — used by the `fuzzer` crate for differential
+# testing. `StdRng::seed_from_u64(0)` provides deterministic seeding.
 rand          = "0.8"
 
-# Date / time — the Rust analogue of Kotlin's `java.time.*`. We use
-# `chrono::NaiveDate` wherever the Kotlin source uses `java.time.LocalDate`
-# (logical-plan `LiteralDate`, sql planner date-literal parse, query-planner
-# date-to-days lowering). Pulled in by the same crates that import it in
-# Kotlin — `logical-plan`, `sql`, `query-planner`. Standing convention: when
-# Kotlin uses a stdlib library, the Rust port uses the equivalent crate.
+# Date / time — `chrono::NaiveDate` is used for `LiteralDate` in
+# `logical-plan`, the SQL planner's date-literal parse, and the
+# `query-planner` date-to-days lowering.
 chrono        = { version = "0.4", default-features = false, features = ["std"] }
 
-# Process / system info — the Rust analogue of Kotlin's
-# `Runtime.getRuntime().{max,total,free}Memory()`. Used by the `benchmarks`
-# crate to print process memory stats at the start and end of a run, matching
-# Kotlin's `Benchmarks.kt` shape. Per the standing convention above.
+# Process / system info — used by the `benchmarks` crate to print process
+# memory stats at the start and end of a run.
 sysinfo       = { version = "0.31", default-features = false, features = ["system"] }
 
 # RPC and serialisation — needed only by protobuf / flight-server / client / distributed.
 prost         = "0.13"
 tonic         = "0.12"
 
-# SQL parser — DO NOT enable yet. Per ARCHITECTURE.md §4.6, the Pratt parser is
-# hand-ported in the `sql` crate; a `sqlparser-rs` swap is reserved for a future rewrite.
+# SQL parser — DO NOT enable. The Pratt parser is hand-rolled in the `sql`
+# crate; replacing it with `sqlparser-rs` is out of scope here.
 # sqlparser   = "0.50"
 
-# Error handling — minimal in this faithful port per ARCHITECTURE.md §3.6 (panic!()/unwrap() are acceptable).
+# Error handling.
 anyhow        = "1"
 thiserror     = "1"
 
 # Logging
 log           = "0.4"
 env_logger    = "0.11"
-# `tracing` is DataFusion's logging choice. Used by `distributed/` (the analogue of
-# Kotlin's `java.util.logging.Logger` in `Scheduler.kt`) so rquery readers see the
-# same macro names (`info!`/`debug!`/`warn!`) they will meet at DataFusion source level.
+# `tracing` is DataFusion's logging choice. Used by `distributed/` so readers
+# see the same macro names (`info!`/`debug!`/`warn!`) used by DataFusion.
 tracing       = "0.1"
 # `tracing-subscriber` is the consumer side — only needed by binaries that initialise
 # the global subscriber. Added at workspace level so `flight-server`'s bin and any
@@ -99,12 +85,12 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Async runtime — required by `flight-server` (the Arrow Flight server runs on tonic,
 # which is async-native). Kept minimal in features: rt-multi-thread for the worker
 # pool, macros for `#[tokio::main]`, sync for `mpsc` channels used in the
-# sync->async bridge inside `do_get` (see ARCHITECTURE.md §4.6).
+# sync->async bridge inside `do_get`.
 #
-# NOTE: This does NOT contradict the rayon-not-tokio rule at line 52. Rayon is for
-# CPU-bound operator execution inside `ParallelContext`; tokio is for I/O-bound gRPC
-# handling at the Flight boundary. The two coexist: operator threads use rayon,
-# Flight server I/O uses tokio. See ARCHITECTURE.md §3.9 for the split rationale.
+# NOTE: This does NOT contradict the rayon-not-tokio rule above. Rayon is for
+# CPU-bound operator execution inside `ParallelContext`; tokio is for
+# I/O-bound gRPC handling at the Flight boundary. The two coexist: operator
+# threads use rayon, Flight server I/O uses tokio.
 tokio         = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"] }
 
 # `futures` provides the `Stream` trait that arrow-flight's `FlightService` associated
@@ -112,8 +98,8 @@ tokio         = { version = "1", features = ["rt-multi-thread", "macros", "sync"
 # on top of `futures-core`; pulling `futures` keeps both surfaces available.
 futures       = "0.3"
 
-# UUID generation — analogue of Kotlin's `java.util.UUID.randomUUID()`. Used by
-# `distributed::Scheduler` to mint a fresh `jobUuid` per query.
+# UUID generation — used by `distributed::Scheduler` to mint a fresh
+# `job_uuid` per query.
 uuid          = { version = "1", features = ["v4"] }
 
 # Testing helpers

@@ -1,4 +1,3 @@
-//! Port of `kquery/physical-plan/src/main/kotlin/expressions/AggregateExpression.kt`.
 //!
 //! An aggregate expression names the input it aggregates over and knows how to
 //! create a fresh [`Accumulator`] for it. `HashAggregateExec` holds one accumulator
@@ -11,18 +10,18 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::sync::Arc;
 
-/// Physical aggregate expression. Kotlin `interface AggregateExpression`.
+/// Physical aggregate expression.
 ///
-/// `: fmt::Display` so `HashAggregateExec`'s `toString` can print its aggregates
-/// (Kotlin relied on each class's `toString`, e.g. `"MIN(#0)"`). `Send + Sync`
-/// lets `Arc<dyn AggregateExpression>` be shared with rayon workers in
-/// `ParallelContext` (see the `PhysicalPlan` module note); each concrete aggregate
-/// holds only an `Arc<dyn Expression>` input plus plain data.
+/// `: fmt::Display` so `HashAggregateExec`'s `Display` impl can print its
+/// aggregates (e.g. `"MIN(#0)"`). `Send + Sync` lets
+/// `Arc<dyn AggregateExpression>` be shared with rayon workers in
+/// `ParallelContext` (see the `PhysicalPlan` module note); each concrete
+/// aggregate holds only an `Arc<dyn Expression>` input plus plain data.
 pub trait AggregateExpression: fmt::Display + Send + Sync {
-    /// The expression whose values are aggregated. Kotlin `inputExpression()`.
+    /// The expression whose values are aggregated.
     fn input_expression(&self) -> Arc<dyn Expression>;
 
-    /// Create a fresh accumulator for this aggregate. Kotlin `createAccumulator()`.
+    /// Create a fresh accumulator for this aggregate.
     fn create_accumulator(&self) -> Box<dyn Accumulator>;
 
     /// Type-erased self-reference for runtime downcasting (see
@@ -34,9 +33,8 @@ pub trait AggregateExpression: fmt::Display + Send + Sync {
 }
 
 /// Compare two same-typed scalars. Returns `None` for incomparable float pairs
-/// (e.g. involving `NaN`), so `scalar_lt`/`scalar_gt` treat `NaN` the way Kotlin's
-/// `<` / `>` operators do (always false). Panics on a type MIN/MAX doesn't support
-/// — matching Kotlin's `UnsupportedOperationException`.
+/// (e.g. involving `NaN`), so `scalar_lt`/`scalar_gt` treat `NaN` comparisons
+/// as always false. Panics on a type MIN/MAX doesn't support.
 fn cmp_scalar(a: &ScalarValue, b: &ScalarValue) -> Option<Ordering> {
     use ScalarValue::*;
     match (a, b) {
@@ -56,12 +54,12 @@ fn cmp_scalar(a: &ScalarValue, b: &ScalarValue) -> Option<Ordering> {
     }
 }
 
-/// `a < b` over same-typed scalars (Kotlin's `value < this.value` for MIN).
+/// `a < b` over same-typed scalars — used by MIN.
 pub(crate) fn scalar_lt(a: &ScalarValue, b: &ScalarValue) -> bool {
     matches!(cmp_scalar(a, b), Some(Ordering::Less))
 }
 
-/// `a > b` over same-typed scalars (Kotlin's `value > this.value` for MAX).
+/// `a > b` over same-typed scalars — used by MAX.
 pub(crate) fn scalar_gt(a: &ScalarValue, b: &ScalarValue) -> bool {
     matches!(cmp_scalar(a, b), Some(Ordering::Greater))
 }

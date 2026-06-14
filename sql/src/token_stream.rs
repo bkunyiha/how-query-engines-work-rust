@@ -1,13 +1,10 @@
-//! Port of `kquery/sql/src/main/kotlin/TokenStream.kt`.
-//!
 //! A cursor over a `Vec<Token>` with the small lookahead/consume helpers the
-//! parser needs. Kotlin's `java.util.logging.Logger` calls are dropped — the
-//! port favours plain control flow over logging.
+//! parser needs.
 
 use crate::tokens::{Token, TokenType};
 use std::fmt;
 
-/// A position-tracking stream of tokens. Kotlin: `class TokenStream(tokens)`.
+/// A position-tracking stream of tokens.
 pub struct TokenStream {
     pub tokens: Vec<Token>,
     pub i: usize,
@@ -18,7 +15,7 @@ impl TokenStream {
         Self { tokens, i: 0 }
     }
 
-    /// The current token without advancing. Kotlin: `peek()`.
+    /// The current token without advancing.
     ///
     /// Returns an owned clone (rather than a borrow) so the parser can read the
     /// peeked token's fields and then mutate the stream in the same expression
@@ -27,7 +24,7 @@ impl TokenStream {
         self.tokens.get(self.i).cloned()
     }
 
-    /// The current token, advancing past it. Kotlin: `next()`.
+    /// The current token, advancing past it.
     #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<Token> {
         if self.i < self.tokens.len() {
@@ -40,7 +37,7 @@ impl TokenStream {
     }
 
     /// Consume a sequence of keywords atomically, restoring the cursor if any
-    /// one fails to match. Kotlin: `consumeKeywords(s)`.
+    /// one fails to match.
     pub fn consume_keywords(&mut self, keywords: &[&str]) -> bool {
         let save = self.i;
         for kw in keywords {
@@ -53,7 +50,6 @@ impl TokenStream {
     }
 
     /// Consume the next token iff it is the given keyword (case-insensitive).
-    /// Kotlin: `consumeKeyword(s)`.
     pub fn consume_keyword(&mut self, s: &str) -> bool {
         match self.peek() {
             Some(token)
@@ -67,8 +63,7 @@ impl TokenStream {
         }
     }
 
-    /// Consume the next token iff its type matches `t`. Kotlin:
-    /// `consumeTokenType(t)`.
+    /// Consume the next token iff its type matches `t`.
     pub fn consume_token_type(&mut self, t: &TokenType) -> bool {
         match self.peek() {
             Some(token) if &token.token_type == t => {
@@ -82,7 +77,7 @@ impl TokenStream {
 
 impl fmt::Display for TokenStream {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // The current token is marked with a leading `*`. Kotlin: `toString()`.
+        // The current token is marked with a leading `*`.
         let parts: Vec<String> = self
             .tokens
             .iter()

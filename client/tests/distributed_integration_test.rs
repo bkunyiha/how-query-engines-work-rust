@@ -24,7 +24,7 @@
 //! (the test isn't just running everything in one partition with no
 //! shuffle work). With one executor, all shuffle locations are local —
 //! `ShuffleReaderExec` reads via `ctx.shuffle_manager` and never hits the
-//! Phase 2 remote-fetch path.
+//! cross-executor remote-fetch path (currently unimplemented).
 //!
 //! ## Threading model — sync test, server in a background thread
 //!
@@ -117,7 +117,11 @@ fn distributed_aggregate_query_end_to_end_via_flight() {
 
     // Build the FlightExecutorClient pointed at the in-process server.
     // ExecutorConfig.port is i32; SocketAddr.port() is u16.
-    let executors = vec![ExecutorConfig::new("exec-test", "127.0.0.1", addr.port() as i32)];
+    let executors = vec![ExecutorConfig::new(
+        "exec-test",
+        "127.0.0.1",
+        addr.port() as i32,
+    )];
     let flight_client = FlightExecutorClient::new(&executors)
         .expect("FlightExecutorClient::new should connect to the in-process server");
 

@@ -26,7 +26,7 @@
 //! `flight-server` plays the role of every executor. With one executor, all
 //! shuffle locations are local, so the stage-1 `ShuffleReaderExec` reads via
 //! `ctx.shuffle_manager` and never exercises the cross-executor
-//! `fetch_shuffle` path (which is a Phase 2 stub today).
+//! `fetch_shuffle` path (which is currently unimplemented).
 //!
 //! Forcing 3 partitions via `DistributedConfig::with_default_partitions(3)`
 //! means the shuffle is still real — stage 0 hash-partitions employee rows
@@ -81,10 +81,17 @@ fn main() {
     // Build the cluster config pointed at the in-process server. One
     // executor; force 3 partitions so the shuffle is real (otherwise
     // default_partitions = executor count = 1, no redistribution).
-    let executors = vec![ExecutorConfig::new("exec-1", "127.0.0.1", addr.port() as i32)];
+    let executors = vec![ExecutorConfig::new(
+        "exec-1",
+        "127.0.0.1",
+        addr.port() as i32,
+    )];
     let config = DistributedConfig::new(executors.clone()).with_default_partitions(3);
 
-    println!("Configured cluster with {} executor:", config.executors.len());
+    println!(
+        "Configured cluster with {} executor:",
+        config.executors.len()
+    );
     for e in &config.executors {
         println!("  - {} at {}:{}", e.id, e.host, e.port);
     }
@@ -103,7 +110,9 @@ fn main() {
     // Execute the query. The scheduler drives every Flight call
     // synchronously; the result iterator buffers the decoded RecordBatches
     // from the server's streaming `do_get` response.
-    println!("Executing query (stage 0 → 3 shuffle-writer tasks via do_action, stage 1 → 1 final task via do_get):");
+    println!(
+        "Executing query (stage 0 → 3 shuffle-writer tasks via do_action, stage 1 → 1 final task via do_get):"
+    );
     let start = Instant::now();
     let results: Vec<RecordBatch> = ctx.sql(SQL).collect();
     let elapsed = start.elapsed().as_millis();
@@ -146,7 +155,7 @@ fn spawn_in_process_server(executor_id: &str) -> (std::net::SocketAddr, String) 
             // The executor identity in the context must match the id/port
             // the scheduler dispatches against — otherwise shuffle reads
             // see locations with `executor_id != ctx.executor_id` and try
-            // the (Phase 2 stub) cross-executor fetch path.
+            // the cross-executor fetch path (currently unimplemented).
             let ctx = ExecutorContext::new(
                 executor_id_owned,
                 "127.0.0.1",

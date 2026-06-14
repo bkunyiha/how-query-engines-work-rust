@@ -1,4 +1,3 @@
-//! Port of `kquery/examples/src/main/kotlin/NYCTaxi.kt`.
 //!
 //! Reads a single month of the NYC yellow-taxi trip data and runs:
 //!
@@ -9,24 +8,18 @@
 //! ```
 //!
 //! Prints the logical plan, the optimized plan, every result batch, and the
-//! wall-clock time. This is the **definition-of-done** binary called out in
-//! `README.md`: a successful run on the same input file should produce output
-//! matching the kquery reference (modulo float-formatting, see
-//! `TRANSLATION_NOTES.md → Module: execution`).
+//! wall-clock time. Float formatting follows Rust's default `f32::to_string`.
 //!
 //! ## Where the input file lives
-//! The path is **hardcoded** to match the kquery original verbatim
-//! (`TRANSLATION_NOTES.md → Module: examples` records this as a deliberate
-//! Phase-1 choice — faithful port, NYC file paths kept literal). Obtain the
-//! file once with:
+//! The path is **hardcoded** to a specific 2019-01 yellow-taxi file. Obtain
+//! the file once with:
 //!
 //! ```text
 //! wget https://s3.amazonaws.com/nyc-tlc/trip+data/yellow_tripdata_2019-01.csv
 //! ```
 //!
 //! and place / symlink it at the path below. Without the file, the binary
-//! panics with the `CsvDataSource` "file not found" error — same observable
-//! behaviour as the Kotlin original.
+//! panics with the `CsvDataSource` "file not found" error.
 
 use std::collections::HashMap;
 use std::time::Instant;
@@ -38,8 +31,8 @@ use execution::ExecutionContext;
 use logical_plan::{cast, col, format, max};
 use optimizer::Optimizer;
 
-/// Hardcoded NYC yellow-taxi 2019-01 path. Matches `NYCTaxi.kt` verbatim; see
-/// the module-doc for how to obtain the file.
+/// Hardcoded NYC yellow-taxi 2019-01 path; see the module-doc for how to
+/// obtain the file.
 const NYC_TAXI_CSV: &str = "/mnt/nyctaxi/csv/year=2019/yellow_tripdata_2019-01.csv";
 
 fn main() {
@@ -61,16 +54,13 @@ fn main() {
     // `ProjectionPushDown` (and other rules) do to the logical tree.
     // `ExecutionContext::execute()` will re-run `Optimizer::optimize` internally;
     // the optimizer is idempotent, so the second pass is a no-op shape-wise.
-    // This mirrors the Kotlin original's two-step (manual optimize + execute).
     let optimized_plan = Optimizer::new().optimize(df.logical_plan());
     println!("Optimized Plan:\t{}", format(&optimized_plan));
 
     let results: Box<dyn Iterator<Item = RecordBatch>> = ctx.execute(df.logical_plan());
     for batch in results {
-        // Print each batch's schema and its CSV rendering. Kotlin prints
-        // `batch.schema` (the kquery `Schema` data class's `toString`); the
-        // Rust equivalent here is the arrow-rs `Schema`'s `Debug` form, which
-        // is what `RecordBatch::schema()` returns under our `datatypes` crate.
+        // Print each batch's schema (arrow-rs `Schema`'s `Debug` form) and
+        // its CSV rendering.
         println!("{:?}", batch.schema());
         println!("{}", to_csv(&batch));
     }

@@ -1,19 +1,11 @@
-//! Port of `kquery/datatypes/src/main/kotlin/ColumnVector.kt`.
-//!
 //! Abstraction over different implementations of a column vector.
 //!
-//! Translation notes:
-//! - Kotlin `interface ColumnVector` → Rust `pub trait ColumnVector`.
-//! - Kotlin's `AutoCloseable` parent interface is *not* ported. arrow-rs
-//!   uses reference-counted `Arc<dyn Array>` for its array types, so explicit
-//!   `close()` is unnecessary — memory is released when the last `Arc` is
-//!   dropped. The `Drop` trait handles any non-Arrow resources automatically.
-//! - Kotlin `getValue(i: Int): Any?` becomes `get_value(i: usize) -> ScalarValue`
-//!   as the typed-enum substitution for `Any`. The
-//!   `Null` variant of [`ScalarValue`] carries the nullability that Kotlin
-//!   expressed with the `?` (nullable) marker.
-//! - Method renaming: `getType` / `getValue` → `get_type` / `get_value` per
-//!   Rust convention.
+//! ## Notes
+//! - arrow-rs uses reference-counted `Arc<dyn Array>` for its array types, so
+//!   no explicit `close()` is needed — memory is released when the last `Arc`
+//!   is dropped. `Drop` handles any non-Arrow resources automatically.
+//! - [`ScalarValue`] is the typed-enum substitution for `Any`, with a `Null`
+//!   variant carrying nullability.
 //!
 //! [`ScalarValue`]: crate::scalar_value::ScalarValue
 

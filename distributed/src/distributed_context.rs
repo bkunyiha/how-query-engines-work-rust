@@ -1,14 +1,11 @@
-//! Port of `kquery/distributed/src/main/kotlin/DistributedContext.kt`.
-//!
 //! High-level facade matching [`execution::ExecutionContext`]'s API
 //! (`register_csv` / `register` / `sql` / `execute`) but routing execution
 //! through [`Scheduler`] instead of running the plan in-process.
 //!
-//! ## Translation note — no `execution` dep
-//! Kotlin's `DistributedContext` re-implements the table registry / SQL parse
-//! pipeline rather than importing `ExecutionContext`. We mirror that — see
-//! `distributed/Cargo.toml`'s explicit grep-against-kquery dep list. The two
-//! contexts share shape but not code.
+//! ## No `execution` dep
+//! `DistributedContext` re-implements the table registry / SQL parse pipeline
+//! rather than importing `ExecutionContext`. The two contexts share shape but
+//! not code.
 
 use crate::{DistributedConfig, DistributedPlanner, ExecutorClient, Scheduler};
 use datasource::CsvDataSource;
@@ -22,12 +19,10 @@ use sql::{PrattParser, SqlExpr, SqlParser, SqlPlanner, SqlTokenizer};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// CSV batch size for tables registered through `register_csv`. Matches
-/// `kquery/distributed/.../DistributedContext.kt`, which hardcodes 1024.
+/// CSV batch size for tables registered through `register_csv`.
 const CSV_BATCH_SIZE: usize = 1024;
 
 /// High-level context for executing distributed queries.
-/// Kotlin `class DistributedContext(config, executorClient)`.
 pub struct DistributedContext<C: ExecutorClient> {
     tables: HashMap<String, DataFrame>,
     scheduler: Scheduler<C>,
@@ -46,20 +41,18 @@ impl<C: ExecutorClient> DistributedContext<C> {
     }
 
     /// Register a CSV file as a table.
-    /// Kotlin `fun registerCsv(tableName: String, path: String, hasHeader: Boolean = true)`.
     pub fn register_csv(&mut self, table_name: &str, path: &str, has_header: bool) {
         let ds = CsvDataSource::new(path, None, has_header, CSV_BATCH_SIZE);
         let df = DataFrame::new(LogicalPlan::Scan(Scan::new(path, Arc::new(ds), vec![])));
         self.register(table_name, df);
     }
 
-    /// Register a `DataFrame` as a table. Kotlin `register(tableName, df)`.
+    /// Register a `DataFrame` as a table.
     pub fn register(&mut self, table_name: &str, df: DataFrame) {
         self.tables.insert(table_name.to_string(), df);
     }
 
     /// Parse + plan + execute a SQL query distributed.
-    /// Kotlin `fun sql(sql: String): Sequence<RecordBatch>`.
     pub fn sql(&self, sql: &str) -> Box<dyn Iterator<Item = RecordBatch>> {
         let tokens = SqlTokenizer::new(sql).tokenize();
         let parsed = SqlParser::new(tokens).parse(0);
@@ -72,7 +65,6 @@ impl<C: ExecutorClient> DistributedContext<C> {
     }
 
     /// Optimize, lower to a physical plan, then dispatch via the scheduler.
-    /// Kotlin `fun execute(plan: LogicalPlan): Sequence<RecordBatch>`.
     pub fn execute(&self, plan: &LogicalPlan) -> Box<dyn Iterator<Item = RecordBatch>> {
         let optimized: LogicalPlan = Optimizer::new().optimize(plan);
         let physical: Arc<dyn PhysicalPlan> = QueryPlanner::new().create_physical_plan(&optimized);

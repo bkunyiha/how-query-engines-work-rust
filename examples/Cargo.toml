@@ -1,6 +1,6 @@
 [package]
 name         = "examples"
-description  = "Worked examples — NYCTaxi, ParallelQuery, etc. Rust port of kquery/examples."
+description  = "Worked example binaries — NYC taxi, parallel query, distributed."
 edition.workspace      = true
 license.workspace      = true
 version.workspace      = true
@@ -28,9 +28,8 @@ arrow-flight    = { workspace = true }
 tonic           = { workspace = true }
 tokio           = { workspace = true }
 tokio-stream    = "0.1"
-# Coroutines → rayon (ARCHITECTURE.md §3.9): `parallel_query` fans out 12
-# monthly CSV queries via `(1..=12).into_par_iter()`, the faithful Rust
-# substitution for kquery's `GlobalScope.async { … }.await`.
+# Data parallelism: `parallel_query` fans out 12 monthly CSV queries via
+# `(1..=12).into_par_iter()`.
 rayon           = { workspace = true }
 log             = { workspace = true }
 env_logger      = { workspace = true }

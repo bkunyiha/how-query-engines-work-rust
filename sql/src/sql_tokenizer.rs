@@ -1,20 +1,16 @@
-//! Port of `kquery/sql/src/main/kotlin/SqlTokenizer.kt`.
-//!
 //! Hand-written lexer that turns a SQL string into a [`TokenStream`].
 //!
-//! ## Translation notes
-//! - Kotlin indexes the SQL `String` by char (`sql[offset]`, `substring`).
-//!   Rust `String` is UTF-8 and indexes by byte, so the tokenizer holds the
-//!   input as a `Vec<char>` and works in char offsets. This keeps every
-//!   `end_offset` identical to the Kotlin tokenizer (and to the test
-//!   expectations), and avoids byte/char-boundary hazards.
-//! - `TokenizeException` (a Kotlin `Throwable`) becomes `panic!`, per §3.6 —
-//!   this port panics where the Kotlin code throws.
+//! ## Notes
+//! - Rust `String` is UTF-8 and indexes by byte, so the tokenizer holds the
+//!   input as a `Vec<char>` and works in char offsets. This makes
+//!   `end_offset` a stable character index and avoids byte/char-boundary
+//!   hazards.
+//! - Tokenization errors are reported via `panic!` (§3.6).
 
 use crate::token_stream::TokenStream;
 use crate::tokens::{Keyword, Literal, Symbol, Token, TokenType};
 
-/// Lexer over a SQL string. Kotlin: `class SqlTokenizer(val sql: String)`.
+/// Lexer over a SQL string.
 pub struct SqlTokenizer {
     chars: Vec<char>,
     pub offset: usize,
@@ -22,20 +18,23 @@ pub struct SqlTokenizer {
 
 impl SqlTokenizer {
     pub fn new(sql: &str) -> Self {
-        Self { chars: sql.chars().collect(), offset: 0 }
+        Self {
+            chars: sql.chars().collect(),
+            offset: 0,
+        }
     }
 
-    /// Length in characters. Kotlin: `sql.length`.
+    /// Length in characters.
     fn len(&self) -> usize {
         self.chars.len()
     }
 
-    /// `chars[start..end]` as an owned `String`. Kotlin: `sql.substring(a, b)`.
+    /// `chars[start..end]` as an owned `String`.
     fn substring(&self, start: usize, end: usize) -> String {
         self.chars[start..end].iter().collect()
     }
 
-    /// Tokenize the whole input. Kotlin: `tokenize()`.
+    /// Tokenize the whole input.
     pub fn tokenize(&mut self) -> TokenStream {
         let mut list = Vec::new();
         while let Some(token) = self.next_token() {
@@ -44,7 +43,6 @@ impl SqlTokenizer {
         TokenStream::new(list)
     }
 
-    /// Kotlin: `nextToken()`.
     fn next_token(&mut self) -> Option<Token> {
         self.offset = self.skip_whitespace(self.offset);
         if self.offset >= self.len() {
@@ -72,32 +70,37 @@ impl SqlTokenizer {
         }
     }
 
-    /// Kotlin: `skipWhitespace(startOffset)`.
     fn skip_whitespace(&self, start: usize) -> usize {
         self.index_of_first(start, |ch| !ch.is_whitespace())
     }
 
-    /// Kotlin: `scanNumber(startOffset)`.
     fn scan_number(&self, start: usize) -> Token {
         // The `-` branch is dead in the main path (a leading `-` is a `Symbol`,
-        // not a number start) but is preserved to mirror the Kotlin source.
+        // not a number start) but is preserved for completeness.
         let mut end = if self.chars[start] == '-' {
             self.index_of_first(start + 1, |ch| !ch.is_ascii_digit())
         } else {
             self.index_of_first(start, |ch| !ch.is_ascii_digit())
         };
         if end == self.len() {
-            return Token::new(self.substring(start, end), TokenType::Literal(Literal::Long), end);
+            return Token::new(
+                self.substring(start, end),
+                TokenType::Literal(Literal::Long),
+                end,
+            );
         }
         let is_float = self.chars[end] == '.';
         if is_float {
             end = self.index_of_first(end + 1, |ch| !ch.is_ascii_digit());
         }
-        let lit = if is_float { Literal::Double } else { Literal::Long };
+        let lit = if is_float {
+            Literal::Double
+        } else {
+            Literal::Long
+        };
         Token::new(self.substring(start, end), TokenType::Literal(lit), end)
     }
 
-    /// Kotlin: `scanIdentifier(startOffset)`.
     fn scan_identifier(&self, start: usize) -> Token {
         // Back-quoted identifier: `like this`.
         if self.chars[start] == '`' {
@@ -123,18 +126,18 @@ impl SqlTokenizer {
     }
 
     /// `ORDER` / `GROUP` are keywords only when followed by `BY`; otherwise they
-    /// are ordinary identifiers (e.g. a table named `order`). Kotlin:
-    /// `isAmbiguousIdentifier(text)`.
+    /// are ordinary identifiers (e.g. a table named `order`).
     fn is_ambiguous_identifier(&self, text: &str) -> bool {
         text.eq_ignore_ascii_case(Keyword::Order.name())
             || text.eq_ignore_ascii_case(Keyword::Group.name())
     }
 
-    /// Kotlin: `processAmbiguousIdentifier(startOffset, text)`.
     fn process_ambiguous_identifier(&self, start: usize, text: &str) -> TokenType {
         let skip = self.skip_whitespace(start);
         if skip + 2 <= self.len()
-            && self.substring(skip, skip + 2).eq_ignore_ascii_case(Keyword::By.name())
+            && self
+                .substring(skip, skip + 2)
+                .eq_ignore_ascii_case(Keyword::By.name())
         {
             TokenType::Keyword(
                 Keyword::text_of(text).expect("ambiguous identifier must be a keyword"),
@@ -144,7 +147,6 @@ impl SqlTokenizer {
         }
     }
 
-    /// Kotlin: `getOffsetUntilTerminatedChar(terminatedChar, startOffset)`.
     fn get_offset_until_terminated_char(&self, terminated: char, start: usize) -> usize {
         match self.chars[start..].iter().position(|&c| c == terminated) {
             Some(pos) => start + pos,
@@ -152,7 +154,6 @@ impl SqlTokenizer {
         }
     }
 
-    /// Kotlin: `scanSymbol(startOffset)`. Greedily matches the longest symbol
     /// text starting at `start`, shrinking until a valid symbol is found.
     fn scan_symbol(&self, start: usize) -> Token {
         let mut end = self.index_of_first(start, |ch| !Symbol::is_symbol(ch));
@@ -167,7 +168,6 @@ impl SqlTokenizer {
         Token::new(text, TokenType::Symbol(symbol), end)
     }
 
-    /// Kotlin: `scanChars(startOffset, terminatedChar)`. Handles SQL's doubled
     /// quote escape (`''` or `""`).
     fn scan_chars(&self, start: usize, terminated: char) -> Token {
         let mut builder = String::new();
@@ -190,7 +190,7 @@ impl SqlTokenizer {
     }
 
     /// First index `>= start` whose char satisfies `predicate`, or the input
-    /// length if none does. Kotlin: the `CharSequence.indexOfFirst` extension.
+    /// length if none does.
     fn index_of_first(&self, start: usize, predicate: impl Fn(char) -> bool) -> usize {
         let mut idx = start;
         while idx < self.len() {
@@ -205,7 +205,6 @@ impl SqlTokenizer {
 
 #[cfg(test)]
 mod tests {
-    //! Port of `kquery/sql/src/test/kotlin/SqlTokenizerTest.kt`.
     use super::*;
 
     fn kw(text: &str, k: Keyword, end: usize) -> Token {
@@ -233,7 +232,10 @@ mod tests {
             kw("FROM", Keyword::From, 37),
             lit("employee", Literal::Identifier, 46),
         ];
-        assert_eq!(tokenize("SELECT id, first_name, last_name FROM employee"), expected);
+        assert_eq!(
+            tokenize("SELECT id, first_name, last_name FROM employee"),
+            expected
+        );
     }
 
     #[test]
@@ -261,7 +263,10 @@ mod tests {
             kw("FROM", Keyword::From, 33),
             lit("employee", Literal::Identifier, 42),
         ];
-        assert_eq!(tokenize("SELECT salary * 0.1 AS bonus FROM employee"), expected);
+        assert_eq!(
+            tokenize("SELECT salary * 0.1 AS bonus FROM employee"),
+            expected
+        );
     }
 
     #[test]
@@ -278,7 +283,10 @@ mod tests {
             sym("=", Symbol::Eq, 39),
             lit("CO", Literal::String, 44),
         ];
-        assert_eq!(tokenize("SELECT a, b FROM employee WHERE state = 'CO'"), expected);
+        assert_eq!(
+            tokenize("SELECT a, b FROM employee WHERE state = 'CO'"),
+            expected
+        );
     }
 
     #[test]

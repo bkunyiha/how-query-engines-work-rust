@@ -1,33 +1,32 @@
-//! Port of `kquery/physical-plan/src/main/kotlin/expressions/Expressions.kt`.
 //!
 //! Home of the root [`Expression`] trait, the literal expressions, and the
 //! [`Accumulator`] trait. Like [`crate::physical_plan::PhysicalPlan`], `Expression`
-//! is a **trait** referenced through `Arc<dyn Expression>` rather than an enum,
-//! per ARCHITECTURE.md §4.6 (the expression set is large and open in spirit).
+//! is a **trait** referenced through `Arc<dyn Expression>` rather than an enum
+//! (the expression set is large and open in spirit).
 //!
 //! A physical expression evaluates against an input [`RecordBatch`] and produces
 //! a whole column of output ([`ColumnVector`]) — it is the runtime counterpart of
 //! a `logical_plan::LogicalExpr`.
 //!
-//! ## Translation note — `Any?` → `ScalarValue`
-//! Kotlin's `Accumulator` traffics in `Any?`. As elsewhere in the port, the typed
-//! [`ScalarValue`] enum (with its own `Null` variant) replaces `Any?`.
+//! ## Typed values via `ScalarValue`
+//! `Accumulator` and related traits exchange typed values via the
+//! [`ScalarValue`] enum (with its own `Null` variant), rather than an
+//! untyped boxed-`Any`.
 
 use datatypes::arrow_types::{DATE_DAY_TYPE, DOUBLE_TYPE, INT64_TYPE, STRING_TYPE};
-use datatypes::{record_batch, ColumnVector, LiteralValueVector, RecordBatch, ScalarValue};
+use datatypes::{ColumnVector, LiteralValueVector, RecordBatch, ScalarValue, record_batch};
 use std::fmt;
 
 /// Physical representation of an expression.
 ///
 /// `Expression: fmt::Display` so that composite expressions (binary, cast) and
-/// operators can print their operands; Kotlin relied on `toString()`. `Send + Sync`
-/// lets `Arc<dyn Expression>` be shared with rayon workers in `ParallelContext`
-/// (see the `PhysicalPlan` module note). It holds: every concrete expression
-/// stores only `Arc<dyn Expression>` operands plus plain data.
+/// operators can print their operands. `Send + Sync` lets `Arc<dyn Expression>`
+/// be shared with rayon workers in `ParallelContext` (see the `PhysicalPlan`
+/// module note). It holds: every concrete expression stores only
+/// `Arc<dyn Expression>` operands plus plain data.
 pub trait Expression: fmt::Display + Send + Sync {
     /// Evaluate against an input record batch and produce a column of output.
     ///
-    /// Kotlin returns `ColumnVector` (the interface); the Rust analogue is a
     /// boxed trait object `Box<dyn ColumnVector>`.
     fn evaluate(&self, input: &RecordBatch) -> Box<dyn ColumnVector>;
 
@@ -62,7 +61,7 @@ pub trait Expression: fmt::Display + Send + Sync {
 // same constant for every row of the input batch.
 // ---------------------------------------------------------------------------
 
-/// A literal `i64` (Kotlin `LiteralLongExpression(val value: Long)`).
+/// A literal `i64`.
 pub struct LiteralLongExpression {
     pub value: i64,
 }
@@ -93,7 +92,7 @@ impl fmt::Display for LiteralLongExpression {
     }
 }
 
-/// A literal `f64` (Kotlin `LiteralDoubleExpression(val value: Double)`).
+/// A literal `f64`.
 pub struct LiteralDoubleExpression {
     pub value: f64,
 }
@@ -124,13 +123,9 @@ impl fmt::Display for LiteralDoubleExpression {
     }
 }
 
-/// A literal string (Kotlin `LiteralStringExpression(val value: String)`).
-///
-/// Translation note: the Kotlin original stores the value as a raw `ByteArray`
-/// under `StringType` (Java Arrow VarChar buffers are bytes). The Rust port keeps
-/// it as a `ScalarValue::Utf8(String)` under `STRING_TYPE` — the typed-enum
-/// equivalent — so it compares directly against string columns read from a scan,
-/// which also surface as `Utf8`.
+/// A literal string. Stored as `ScalarValue::Utf8(String)` under `STRING_TYPE`
+/// so it compares directly against string columns read from a scan, which
+/// also surface as `Utf8`.
 pub struct LiteralStringExpression {
     pub value: String,
 }
@@ -164,7 +159,7 @@ impl fmt::Display for LiteralStringExpression {
 }
 
 /// A literal date stored as days since the Unix epoch
-/// (Kotlin `LiteralDateExpression(val daysSinceEpoch: Int)`).
+///.
 pub struct LiteralDateExpression {
     pub days_since_epoch: i32,
 }
@@ -195,9 +190,8 @@ impl fmt::Display for LiteralDateExpression {
     }
 }
 
-/// A literal interval expressed as a whole number of days
-/// (Kotlin `LiteralIntervalDaysExpression(val days: Long)`). The Kotlin original
-/// stores this under `Int64Type`, so the Rust port uses `INT64_TYPE` / `Int64`.
+/// A literal interval expressed as a whole number of days, stored under
+/// `INT64_TYPE` / `Int64`.
 pub struct LiteralIntervalDaysExpression {
     pub days: i64,
 }
@@ -230,17 +224,17 @@ impl fmt::Display for LiteralIntervalDaysExpression {
 
 // ---------------------------------------------------------------------------
 // Accumulator — the per-key state object used by aggregate expressions
-// (MIN/MAX/SUM/…). Defined here in the Kotlin original; the concrete
-// implementations land with the aggregate expressions in phase 3.
+// (MIN/MAX/SUM/…). Concrete implementations live with each aggregate
+// expression file.
 // ---------------------------------------------------------------------------
 
 /// The value an [`Accumulator`] exchanges during *partial* (distributed,
-/// two-stage) aggregation. Kotlin types this as `Any?`; in practice almost every
-/// accumulator's intermediate value is a single scalar (MIN/MAX/SUM keep their
-/// running value, COUNT keeps a running count), but AVG must carry **both** a
-/// running sum and a count so the two can be merged correctly in the final stage.
-/// This enum unions those two shapes — the typed Rust stand-in for the `Any?` that
-/// flowed through `intermediateValue()` / `merge()`.
+/// two-stage) aggregation. Almost every accumulator's intermediate value is a
+/// single scalar (MIN/MAX/SUM keep their running value, COUNT keeps a running
+/// count), but AVG must carry **both** a running sum and a count so the two
+/// can be merged correctly in the final stage. This enum unions those two
+/// shapes into a typed value flowing through `intermediate_value()` /
+/// `merge()`.
 ///
 /// Single-node (`AggregateMode::Complete`) aggregation never uses this type — it
 /// only calls `accumulate` + `final_value`. It exists for the distributed path
@@ -249,19 +243,19 @@ impl fmt::Display for LiteralIntervalDaysExpression {
 pub enum AccumulatorValue {
     /// A plain scalar — MIN/MAX/SUM/COUNT partial state.
     Scalar(ScalarValue),
-    /// AVG's partial state. Kotlin: `data class AvgIntermediateState(val sum: Double, val count: Int)`.
+    /// AVG's partial state.
     AvgState { sum: f64, count: i32 },
 }
 
-/// Running aggregation state. Kotlin `interface Accumulator`.
+/// Running aggregation state.
 ///
 /// `accumulate`/`merge` mutate the state, so they take `&mut self`;
 /// `final_value`/`intermediate_value` only read it. The per-row input
 /// (`accumulate`) and the final output (`final_value`) are always a single
-/// [`ScalarValue`] (its `Null` variant stands in for Kotlin's `null`). The
-/// distributed-only `intermediate_value`/`merge` traffic in [`AccumulatorValue`],
-/// which can also carry AVG's compound (sum, count) state — the one place a scalar
-/// is insufficient (Kotlin used `Any?` throughout to paper over this).
+/// [`ScalarValue`] (its `Null` variant stands in for the "no value yet" /
+/// "result is null" case). The distributed-only `intermediate_value`/`merge`
+/// traffic in [`AccumulatorValue`], which can also carry AVG's compound
+/// (sum, count) state — the one place a scalar is insufficient.
 pub trait Accumulator {
     /// Fold one input value into the running state.
     fn accumulate(&mut self, value: &ScalarValue);
@@ -270,9 +264,8 @@ pub trait Accumulator {
     fn final_value(&self) -> ScalarValue;
 
     /// Intermediate state for partial (distributed) aggregation. Defaults to the
-    /// final value wrapped as a scalar, matching Kotlin's
-    /// `intermediateValue() = finalValue()` for the accumulators that don't
-    /// override it (everything except AVG).
+    /// final value wrapped as a scalar; only AVG (with its compound running
+    /// sum + count state) overrides this.
     fn intermediate_value(&self) -> AccumulatorValue {
         AccumulatorValue::Scalar(self.final_value())
     }
@@ -283,8 +276,7 @@ pub trait Accumulator {
 }
 
 /// Coerce any numeric (or date) [`ScalarValue`] to `i64`, truncating floats.
-/// The Rust analogue of Kotlin's `(value as Number).toLong()` /
-/// `(value as Number).toInt()`. Panics on a non-numeric value.
+/// Panics on a non-numeric value.
 pub(crate) fn number_to_i64(v: &ScalarValue) -> i64 {
     match v {
         ScalarValue::Int8(n) => *n as i64,
@@ -302,8 +294,7 @@ pub(crate) fn number_to_i64(v: &ScalarValue) -> i64 {
     }
 }
 
-/// Coerce any numeric [`ScalarValue`] to `f64`. The Rust analogue of Kotlin's
-/// `(value as Number).toDouble()`. Panics on a non-numeric value.
+/// Coerce any numeric [`ScalarValue`] to `f64`. Panics on a non-numeric value.
 pub(crate) fn number_to_f64(v: &ScalarValue) -> f64 {
     match v {
         ScalarValue::Int8(n) => *n as f64,
@@ -321,10 +312,9 @@ pub(crate) fn number_to_f64(v: &ScalarValue) -> f64 {
 }
 
 // ---------------------------------------------------------------------------
-// Shared ScalarValue extractors. The Kotlin operators cast with `(x as Int)` etc.
-// after dispatching on the Arrow type; these helpers are the Rust equivalent and
-// are reused by the math and boolean expression families. A wrong variant panics,
-// mirroring Kotlin's `ClassCastException`.
+// Shared ScalarValue extractors. Used by the math and boolean expression
+// families to pull a typed value out of a `ScalarValue` after dispatching on
+// the Arrow type. A wrong variant panics.
 // ---------------------------------------------------------------------------
 
 pub(crate) fn as_i8(v: &ScalarValue) -> i8 {
