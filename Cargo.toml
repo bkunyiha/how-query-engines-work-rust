@@ -33,14 +33,14 @@ rust-version  = "1.85"
 
 [workspace.dependencies]
 # arrow-rs and parquet — pin the major; let cargo update the minor.
-arrow         = "55"
-arrow-array   = "55"
-arrow-schema  = "55"
-arrow-flight  = "55"
+arrow         = "59"
+arrow-array   = "59"
+arrow-schema  = "59"
+arrow-flight  = "59"
 # Arrow IPC reader/writer — used by `physical-plan::ShuffleManager` to
 # serialise per-partition shuffle output to local files.
-arrow-ipc     = "55"
-parquet       = "55"
+arrow-ipc     = "59"
+parquet       = "59"
 
 # Data-parallelism — used by `ParallelContext` for CPU-bound work on a
 # work-stealing thread pool. NOT tokio (tokio is for I/O-bound concurrency).
@@ -48,7 +48,7 @@ rayon         = "1"
 
 # Random number generation — used by the `fuzzer` crate for differential
 # testing. `StdRng::seed_from_u64(0)` provides deterministic seeding.
-rand          = "0.8"
+rand          = "0.10"
 
 # Date / time — `chrono::NaiveDate` is used for `LiteralDate` in
 # `logical-plan`, the SQL planner's date-literal parse, and the
@@ -57,11 +57,11 @@ chrono        = { version = "0.4", default-features = false, features = ["std"] 
 
 # Process / system info — used by the `benchmarks` crate to print process
 # memory stats at the start and end of a run.
-sysinfo       = { version = "0.31", default-features = false, features = ["system"] }
+sysinfo       = { version = "0.36", default-features = false, features = ["system"] }
 
 # RPC and serialisation — needed only by protobuf / flight-server / client / distributed.
-prost         = "0.13"
-tonic         = "0.12"
+prost         = "0.14"
+tonic         = "0.14"
 
 # SQL parser — DO NOT enable. The Pratt parser is hand-rolled in the `sql`
 # crate; replacing it with `sqlparser-rs` is out of scope here.
@@ -69,7 +69,7 @@ tonic         = "0.12"
 
 # Error handling.
 anyhow        = "1"
-thiserror     = "1"
+thiserror     = "2"
 
 # Logging
 log           = "0.4"

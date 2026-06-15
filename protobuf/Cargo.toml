@@ -19,4 +19,6 @@ logical-plan  = { path = "../logical-plan" }
 physical-plan = { path = "../physical-plan" }
 
 [build-dependencies]
-tonic-build = "0.12"
+# tonic 0.14 split the prost-based codegen (`configure()` / `compile_protos`)
+# out of `tonic-build` into the `tonic-prost-build` crate.
+tonic-prost-build = "0.14"

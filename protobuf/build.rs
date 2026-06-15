@@ -13,8 +13,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // `build_client(false)` / `build_server(false)` — module 12 only needs the
     // generated *message* types; the actual gRPC service surface lives in
-    // module 13 (`flight-server`), which calls `tonic-build` on its own.
-    tonic_build::configure()
+    // module 13 (`flight-server`), which calls `tonic-prost-build` on its own.
+    tonic_prost_build::configure()
         .build_client(false)
         .build_server(false)
         .compile_protos(protos, &["../proto/"])?;

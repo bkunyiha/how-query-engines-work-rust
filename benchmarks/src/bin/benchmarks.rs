@@ -169,12 +169,16 @@ fn list_csv_files(path: &str) -> Vec<String> {
 fn print_memory_stats(label: &str) {
     let mut sys = System::new();
     sys.refresh_memory();
-    // sysinfo 0.31: refresh_processes_specifics takes (ProcessesToUpdate, ProcessRefreshKind);
-    // ProcessRefreshKind::new() starts empty, .with_memory() opts memory in.
+    // sysinfo 0.36: refresh_processes_specifics takes
+    // (ProcessesToUpdate, remove_dead_processes: bool, ProcessRefreshKind).
+    // ProcessRefreshKind::nothing() starts empty; .with_memory() now takes
+    // no argument (it took () in 0.31 and a MemoryRefreshKind in some
+    // intermediate releases).
     let pid = Pid::from_u32(std::process::id());
     sys.refresh_processes_specifics(
         ProcessesToUpdate::Some(&[pid]),
-        ProcessRefreshKind::new().with_memory(),
+        true,
+        ProcessRefreshKind::nothing().with_memory(),
     );
     let process_virtual = sys.process(pid).map(|p| p.virtual_memory()).unwrap_or(0);
     println!(

@@ -22,17 +22,17 @@
 //! - **Per-type column builders.** [`datatypes::ArrowVectorBuilder::append_value`]
 //!   performs per-type variant dispatch internally (see `arrow_vector_builder.rs`),
 //!   so the batch-construction loop is one line per column.
-//! - **`self.rng.r#gen::<T>()` (escaped identifier).** `gen` is a reserved
-//!   keyword in Rust 2024 (the workspace edition), so calls to `rand::Rng::gen`
-//!   must use the raw-identifier escape `r#gen`. The method name itself is
-//!   unchanged; only the syntax differs. (Rand 0.9 added a non-keyword alias
-//!   `random()` for this reason; the workspace pins `rand = "0.8"`, hence the
-//!   escape.)
+//! - **`self.rng.random::<T>()` / `random_range(..)`.** As of rand 0.9 the
+//!   value/range helpers are named `random()` and `random_range()` (the old
+//!   `gen()` / `gen_range()` names — `gen` being a reserved keyword in the
+//!   Rust 2024 edition — are gone). In rand 0.10 these helpers live on the
+//!   [`rand::RngExt`] extension trait rather than `Rng`, so that is what the
+//!   call sites import.
 
 use datatypes::{ArrowVectorBuilder, ColumnVector, RecordBatch, ScalarValue, Schema, record_batch};
 use logical_plan::{DataFrame, LogicalExpr};
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 
 use arrow_schema::DataType;
 
@@ -74,7 +74,7 @@ impl Fuzzer {
                 DataType::Float32 => ScalarValue::Float32(self.rng.next_float()),
                 DataType::Float64 => ScalarValue::Float64(self.rng.next_double()),
                 DataType::Utf8 => {
-                    let len = self.rng.rng().gen_range(0..64);
+                    let len = self.rng.rng().random_range(0..64);
                     ScalarValue::Utf8(self.rng.next_string(len))
                 }
                 other => panic!("Fuzzer::create_values: unsupported data type: {other:?}"),
@@ -148,9 +148,9 @@ impl Fuzzer {
         // Build the child plan first, then layer either a projection or a
         // filter on top of it.
         let child = self.create_plan(input, depth + 1, max_depth, max_expr_depth);
-        match self.rng.rng().gen_range(0..2) {
+        match self.rng.rng().random_range(0..2) {
             0 => {
-                let expr_count = self.rng.rng().gen_range(1..5);
+                let expr_count = self.rng.rng().random_range(1..5);
                 let exprs: Vec<LogicalExpr> = (0..expr_count)
                     .map(|_| self.create_expression(&child, 0, max_expr_depth))
                     .collect();
@@ -181,12 +181,12 @@ impl Fuzzer {
         if depth == max_depth {
             // Leaf node: pick a random literal or column reference.
             let fields_len = input.schema().fields.len();
-            return match self.rng.rng().gen_range(0..4) {
-                0 => LogicalExpr::ColumnIndex(self.rng.rng().gen_range(0..fields_len)),
+            return match self.rng.rng().random_range(0..4) {
+                0 => LogicalExpr::ColumnIndex(self.rng.rng().random_range(0..fields_len)),
                 1 => LogicalExpr::LiteralDouble(self.rng.next_double()),
                 2 => LogicalExpr::LiteralLong(self.rng.next_long()),
                 _ => {
-                    let len = self.rng.rng().gen_range(0..64);
+                    let len = self.rng.rng().random_range(0..64);
                     LogicalExpr::LiteralString(self.rng.next_string(len))
                 }
             };
@@ -194,7 +194,7 @@ impl Fuzzer {
         // Internal node: binary op over two recursive subtrees.
         let l = Box::new(self.create_expression(input, depth + 1, max_depth));
         let r = Box::new(self.create_expression(input, depth + 1, max_depth));
-        match self.rng.rng().gen_range(0..8) {
+        match self.rng.rng().random_range(0..8) {
             0 => LogicalExpr::Eq { l, r },
             1 => LogicalExpr::Neq { l, r },
             2 => LogicalExpr::Lt { l, r },
@@ -215,7 +215,7 @@ impl Fuzzer {
 /// type (`MIN` / `MAX` / `0` / `±Inf` / `NaN`).
 ///
 /// Owns the underlying [`StdRng`] so that `Fuzzer` keeps a single source of
-/// randomness; callers that need raw `gen_range(..)`-style calls reach through
+/// randomness; callers that need raw `random_range(..)`-style calls reach through
 /// [`Self::rng`].
 pub struct EnhancedRandom {
     rng: StdRng,
@@ -229,7 +229,7 @@ impl EnhancedRandom {
         }
     }
 
-    /// Borrow the underlying RNG for direct `gen_range(..)` / `gen()` calls.
+    /// Borrow the underlying RNG for direct `random_range(..)` / `random()` calls.
     /// See the module note for why both biased and raw APIs share one field.
     pub fn rng(&mut self) -> &mut StdRng {
         &mut self.rng
@@ -237,42 +237,42 @@ impl EnhancedRandom {
 
     /// Random `i8` biased toward extremes.
     pub fn next_byte(&mut self) -> i8 {
-        match self.rng.gen_range(0..5) {
+        match self.rng.random_range(0..5) {
             0 => i8::MIN,
             1 => i8::MAX,
             // Two arms collapse to `0` to bias output toward zero.
             2 | 3 => 0,
-            _ => self.rng.r#gen::<i32>() as i8,
+            _ => self.rng.random::<i32>() as i8,
         }
     }
 
     /// Random `i16` biased toward extremes.
     pub fn next_short(&mut self) -> i16 {
-        match self.rng.gen_range(0..5) {
+        match self.rng.random_range(0..5) {
             0 => i16::MIN,
             1 => i16::MAX,
             2 | 3 => 0,
-            _ => self.rng.r#gen::<i32>() as i16,
+            _ => self.rng.random::<i32>() as i16,
         }
     }
 
     /// Random `i32` biased toward extremes.
     pub fn next_int(&mut self) -> i32 {
-        match self.rng.gen_range(0..5) {
+        match self.rng.random_range(0..5) {
             0 => i32::MIN,
             1 => i32::MAX,
             2 | 3 => 0,
-            _ => self.rng.r#gen::<i32>(),
+            _ => self.rng.random::<i32>(),
         }
     }
 
     /// Random `i64` biased toward extremes.
     pub fn next_long(&mut self) -> i64 {
-        match self.rng.gen_range(0..5) {
+        match self.rng.random_range(0..5) {
             0 => i64::MIN,
             1 => i64::MAX,
             2 | 3 => 0,
-            _ => self.rng.r#gen::<i64>(),
+            _ => self.rng.random::<i64>(),
         }
     }
 
@@ -280,7 +280,7 @@ impl EnhancedRandom {
     /// `f32::MIN_POSITIVE` (smallest positive value), not `f32::MIN` (most
     /// negative).
     pub fn next_float(&mut self) -> f32 {
-        match self.rng.gen_range(0..8) {
+        match self.rng.random_range(0..8) {
             0 => f32::MIN_POSITIVE,
             1 => f32::MAX,
             2 => f32::INFINITY,
@@ -288,14 +288,14 @@ impl EnhancedRandom {
             4 => f32::NAN,
             5 => -0.0_f32,
             6 => 0.0_f32,
-            _ => self.rng.r#gen::<f32>(),
+            _ => self.rng.random::<f32>(),
         }
     }
 
     /// Random `f64` biased toward extremes including `±Inf` and `NaN`. See the
     /// note on `next_float` regarding `MIN_POSITIVE`.
     pub fn next_double(&mut self) -> f64 {
-        match self.rng.gen_range(0..8) {
+        match self.rng.random_range(0..8) {
             0 => f64::MIN_POSITIVE,
             1 => f64::MAX,
             2 => f64::INFINITY,
@@ -303,7 +303,7 @@ impl EnhancedRandom {
             4 => f64::NAN,
             5 => -0.0_f64,
             6 => 0.0_f64,
-            _ => self.rng.r#gen::<f64>(),
+            _ => self.rng.random::<f64>(),
         }
     }
 
@@ -312,7 +312,7 @@ impl EnhancedRandom {
     /// `0-9`, 62 chars).
     pub fn next_string(&mut self, len: usize) -> String {
         (0..len)
-            .map(|_| CHAR_POOL[self.rng.gen_range(0..CHAR_POOL.len())] as char)
+            .map(|_| CHAR_POOL[self.rng.random_range(0..CHAR_POOL.len())] as char)
             .collect()
     }
 }
