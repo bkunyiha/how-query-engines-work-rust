@@ -252,7 +252,11 @@ impl PhysicalPlan for ShuffleWriterExec {
 
 impl std::fmt::Display for ShuffleWriterExec {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let exprs: Vec<String> = self.partition_expr.iter().map(|e| e.to_string()).collect();
+        let exprs: Vec<String> = self
+            .partition_expr
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         write!(
             f,
             "ShuffleWriterExec: jobUuid={}, stageId={}, partitionCount={}, partitionExpr=[{}]",
@@ -335,7 +339,10 @@ mod tests {
                 .shuffle_manager
                 .read_partition(&loc.job_uuid, loc.stage_id, loc.partition_id)
                 .collect();
-            total_rows += batches.iter().map(|b| b.num_rows()).sum::<usize>();
+            total_rows += batches
+                .iter()
+                .map(datatypes::RecordBatch::num_rows)
+                .sum::<usize>();
         }
         assert_eq!(total_rows, 4, "round-trip row count must match input");
 
@@ -447,7 +454,7 @@ mod tests {
             .shuffle_manager
             .read_partition("test-job-shuffle-writer-one", 0, 0)
             .collect();
-        let total: usize = batches.iter().map(|b| b.num_rows()).sum();
+        let total: usize = batches.iter().map(datatypes::RecordBatch::num_rows).sum();
         assert_eq!(total, 4);
 
         ctx.shuffle_manager.cleanup_all();

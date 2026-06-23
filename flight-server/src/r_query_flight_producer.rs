@@ -499,7 +499,7 @@ mod tests {
             items.len()
         );
         for (i, item) in items.iter().enumerate() {
-            assert!(item.is_ok(), "stream item {i} was Err: {:?}", item);
+            assert!(item.is_ok(), "stream item {i} was Err: {item:?}");
         }
     }
 

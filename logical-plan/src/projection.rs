@@ -32,7 +32,11 @@ impl Projection {
 
 impl fmt::Display for Projection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let exprs: Vec<String> = self.expr.iter().map(|e| e.to_string()).collect();
+        let exprs: Vec<String> = self
+            .expr
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         write!(f, "Projection: {}", exprs.join(", "))
     }
 }

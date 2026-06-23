@@ -71,7 +71,7 @@ impl CsvDataSource {
             .with_delimiter(self.delimiter);
         let (arrow_schema, _records_read) = format
             .infer_schema(&file, Some(1024))
-            .unwrap_or_else(|e| panic!("CsvDataSource::infer_schema: {}", e));
+            .unwrap_or_else(|e| panic!("CsvDataSource::infer_schema: {e}"));
         schema_from_arrow(&arrow_schema)
     }
 }
@@ -100,7 +100,7 @@ impl DataSource for CsvDataSource {
         let full_arrow_schema = Arc::new(full_schema.to_arrow());
 
         // Build the reader. Note: `with_projection` requires column indices.
-        let mut builder = ReaderBuilder::new(full_arrow_schema.clone())
+        let mut builder = ReaderBuilder::new(full_arrow_schema)
             .with_header(self.has_headers)
             .with_batch_size(self.batch_size)
             .with_delimiter(self.delimiter);
@@ -115,10 +115,7 @@ impl DataSource for CsvDataSource {
                         .iter()
                         .position(|f| &f.name == name)
                         .unwrap_or_else(|| {
-                            panic!(
-                                "CsvDataSource::scan: projection column '{}' not in schema",
-                                name
-                            )
+                            panic!("CsvDataSource::scan: projection column '{name}' not in schema")
                         })
                 })
                 .collect();
@@ -127,13 +124,13 @@ impl DataSource for CsvDataSource {
 
         let reader = builder
             .build(file)
-            .unwrap_or_else(|e| panic!("CsvDataSource::scan: failed to build CSV reader: {}", e));
+            .unwrap_or_else(|e| panic!("CsvDataSource::scan: failed to build CSV reader: {e}"));
 
         // The reader is itself an Iterator<Item = Result<RecordBatch, ArrowError>>.
         // Unwrap and panic on parse errors rather than propagating Result.
         Box::new(
             reader.map(|res| {
-                res.unwrap_or_else(|e| panic!("CsvDataSource: malformed CSV batch: {}", e))
+                res.unwrap_or_else(|e| panic!("CsvDataSource: malformed CSV batch: {e}"))
             }),
         )
     }
@@ -148,7 +145,7 @@ mod tests {
     // workspace root. Cargo runs tests from the crate directory, so we point
     // back up one level.
     fn fixture(name: &str) -> String {
-        format!("../testdata/{}", name)
+        format!("../testdata/{name}")
     }
 
     #[test]
@@ -174,7 +171,7 @@ mod tests {
             "job_title",
             "salary",
         ] {
-            assert!(names.contains(&expected), "missing column: {}", expected);
+            assert!(names.contains(&expected), "missing column: {expected}");
         }
     }
 

@@ -68,10 +68,7 @@ impl ArrowVectorBuilder {
             DataType::Utf8 => Self::Utf8(StringBuilder::with_capacity(capacity, 0)),
             DataType::Binary => Self::Binary(BinaryBuilder::with_capacity(capacity, 0)),
             DataType::Date32 => Self::Date32(Date32Builder::with_capacity(capacity)),
-            other => panic!(
-                "ArrowVectorBuilder::new: unsupported data type: {:?}",
-                other
-            ),
+            other => panic!("ArrowVectorBuilder::new: unsupported data type: {other:?}"),
         }
     }
 

@@ -174,7 +174,7 @@ impl LogicalExpr {
                     .unwrap_or_else(|| {
                         let names: Vec<String> =
                             schema.fields.iter().map(|f| f.name.clone()).collect();
-                        panic!("No column named '{}' in {:?}", name, names)
+                        panic!("No column named '{name}' in {names:?}")
                     })
             }
             LogicalExpr::ColumnIndex(i) => input.schema().fields[*i].clone(),
@@ -251,7 +251,8 @@ impl fmt::Display for LogicalExpr {
             LogicalExpr::Modulus { l, r } => write!(f, "{l} % {r}"),
             LogicalExpr::Alias { expr, alias } => write!(f, "{expr} as {alias}"),
             LogicalExpr::ScalarFunction { name, args, .. } => {
-                let args_str: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+                let args_str: Vec<String> =
+                    args.iter().map(std::string::ToString::to_string).collect();
                 write!(f, "{name}([{}])", args_str.join(", "))
             }
             LogicalExpr::AggregateExpr(agg) => write!(f, "{agg}"),

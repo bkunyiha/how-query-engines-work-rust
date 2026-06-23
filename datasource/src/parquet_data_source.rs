@@ -29,7 +29,7 @@ impl ParquetDataSource {
             panic!("ParquetDataSource: cannot open '{}': {}", self.filename, e)
         });
         ParquetRecordBatchReaderBuilder::try_new(file)
-            .unwrap_or_else(|e| panic!("ParquetDataSource: failed to read Parquet metadata: {}", e))
+            .unwrap_or_else(|e| panic!("ParquetDataSource: failed to read Parquet metadata: {e}"))
     }
 }
 
@@ -64,13 +64,13 @@ impl DataSource for ParquetDataSource {
 
         let reader = builder
             .build()
-            .unwrap_or_else(|e| panic!("ParquetDataSource::scan: failed to build reader: {}", e));
+            .unwrap_or_else(|e| panic!("ParquetDataSource::scan: failed to build reader: {e}"));
 
         // The reader is `Iterator<Item = Result<RecordBatch, ArrowError>>`.
         // Unwrap and panic on parse errors.
         Box::new(
             reader.map(|res| {
-                res.unwrap_or_else(|e| panic!("ParquetDataSource: malformed batch: {}", e))
+                res.unwrap_or_else(|e| panic!("ParquetDataSource: malformed batch: {e}"))
             }),
         )
     }
@@ -83,7 +83,7 @@ mod tests {
     use datatypes::{ArrowFieldVector, ColumnVector, ScalarValue};
 
     fn fixture(name: &str) -> String {
-        format!("../testdata/{}", name)
+        format!("../testdata/{name}")
     }
 
     #[test]
@@ -105,7 +105,7 @@ mod tests {
             "string_col",
             "timestamp_col",
         ] {
-            assert!(names.contains(&expected), "missing column: {}", expected);
+            assert!(names.contains(&expected), "missing column: {expected}");
         }
     }
 
@@ -138,7 +138,7 @@ mod tests {
         let col = ArrowFieldVector::new(batch.column(0).clone());
         // All values should be non-null.
         for i in 0..col.size() {
-            assert!(!col.get_value(i).is_null(), "string at index {} is null", i);
+            assert!(!col.get_value(i).is_null(), "string at index {i} is null");
         }
     }
 }

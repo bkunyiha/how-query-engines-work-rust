@@ -205,7 +205,7 @@ async fn integration_do_get_streams_record_batches() {
     }
 
     // employee.csv has 4 rows.
-    let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+    let total_rows: usize = batches.iter().map(datatypes::RecordBatch::num_rows).sum();
     assert_eq!(total_rows, 4, "round-trip row count must match input");
 
     // All batches share the same schema (the scan's output schema). At minimum,

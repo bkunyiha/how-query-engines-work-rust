@@ -190,20 +190,15 @@ impl PrattParser for SqlParser {
         };
         match token.token_type {
             // Keywords
-            TokenType::Keyword(Keyword::As)
-            | TokenType::Keyword(Keyword::Asc)
-            | TokenType::Keyword(Keyword::Desc) => 10,
+            TokenType::Keyword(Keyword::As | Keyword::Asc | Keyword::Desc) => 10,
             TokenType::Keyword(Keyword::Or) => 20,
             TokenType::Keyword(Keyword::And) => 30,
             // Symbols
-            TokenType::Symbol(Symbol::Lt)
-            | TokenType::Symbol(Symbol::LtEq)
-            | TokenType::Symbol(Symbol::Eq)
-            | TokenType::Symbol(Symbol::BangEq)
-            | TokenType::Symbol(Symbol::GtEq)
-            | TokenType::Symbol(Symbol::Gt) => 40,
-            TokenType::Symbol(Symbol::Plus) | TokenType::Symbol(Symbol::Sub) => 50,
-            TokenType::Symbol(Symbol::Star) | TokenType::Symbol(Symbol::Slash) => 60,
+            TokenType::Symbol(
+                Symbol::Lt | Symbol::LtEq | Symbol::Eq | Symbol::BangEq | Symbol::GtEq | Symbol::Gt,
+            ) => 40,
+            TokenType::Symbol(Symbol::Plus | Symbol::Sub) => 50,
+            TokenType::Symbol(Symbol::Star | Symbol::Slash) => 60,
             TokenType::Symbol(Symbol::LeftParen) => 70,
             _ => 0,
         }
@@ -217,11 +212,9 @@ impl PrattParser for SqlParser {
             TokenType::Keyword(Keyword::Cast) => self.parse_cast(),
             TokenType::Keyword(Keyword::Date) => self.parse_date(),
             TokenType::Keyword(Keyword::Interval) => self.parse_interval(),
-            TokenType::Keyword(Keyword::Min)
-            | TokenType::Keyword(Keyword::Max)
-            | TokenType::Keyword(Keyword::Sum)
-            | TokenType::Keyword(Keyword::Avg)
-            | TokenType::Keyword(Keyword::Count) => SqlExpr::Identifier(token.text.clone()),
+            TokenType::Keyword(
+                Keyword::Min | Keyword::Max | Keyword::Sum | Keyword::Avg | Keyword::Count,
+            ) => SqlExpr::Identifier(token.text.clone()),
 
             // type keywords used as identifiers
             TokenType::Keyword(Keyword::Int) => SqlExpr::Identifier(token.text.clone()),
@@ -261,17 +254,19 @@ impl PrattParser for SqlParser {
         let token = self.tokens.peek().expect("infix token");
         match &token.token_type {
             // Arithmetic and comparison operators
-            TokenType::Symbol(Symbol::Plus)
-            | TokenType::Symbol(Symbol::Sub)
-            | TokenType::Symbol(Symbol::Star)
-            | TokenType::Symbol(Symbol::Slash)
-            | TokenType::Symbol(Symbol::Eq)
-            | TokenType::Symbol(Symbol::Gt)
-            | TokenType::Symbol(Symbol::Lt)
-            | TokenType::Symbol(Symbol::GtEq)
-            | TokenType::Symbol(Symbol::LtEq)
-            | TokenType::Symbol(Symbol::BangEq)
-            | TokenType::Symbol(Symbol::LtGt) => {
+            TokenType::Symbol(
+                Symbol::Plus
+                | Symbol::Sub
+                | Symbol::Star
+                | Symbol::Slash
+                | Symbol::Eq
+                | Symbol::Gt
+                | Symbol::Lt
+                | Symbol::GtEq
+                | Symbol::LtEq
+                | Symbol::BangEq
+                | Symbol::LtGt,
+            ) => {
                 self.tokens.next(); // consume the operator
                 let r = self.parse(precedence).expect("Error parsing infix");
                 SqlExpr::BinaryExpr {
@@ -291,7 +286,7 @@ impl PrattParser for SqlParser {
             }
 
             // boolean operators
-            TokenType::Keyword(Keyword::And) | TokenType::Keyword(Keyword::Or) => {
+            TokenType::Keyword(Keyword::And | Keyword::Or) => {
                 self.tokens.next(); // consume the keyword
                 let r = self.parse(precedence).expect("Error parsing infix");
                 SqlExpr::BinaryExpr {
@@ -302,7 +297,7 @@ impl PrattParser for SqlParser {
             }
 
             // sort direction
-            TokenType::Keyword(Keyword::Asc) | TokenType::Keyword(Keyword::Desc) => {
+            TokenType::Keyword(Keyword::Asc | Keyword::Desc) => {
                 self.tokens.next();
                 let asc = matches!(token.token_type, TokenType::Keyword(Keyword::Asc));
                 SqlExpr::Sort {

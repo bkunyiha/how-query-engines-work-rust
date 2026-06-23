@@ -94,7 +94,11 @@ impl PhysicalPlan for ProjectionExec {
 impl fmt::Display for ProjectionExec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Render as `ProjectionExec: [a, b, c]` — bracketed, comma-separated.
-        let exprs: Vec<String> = self.expr.iter().map(|e| e.to_string()).collect();
+        let exprs: Vec<String> = self
+            .expr
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         write!(f, "ProjectionExec: [{}]", exprs.join(", "))
     }
 }

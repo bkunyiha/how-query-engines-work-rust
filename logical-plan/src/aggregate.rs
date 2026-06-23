@@ -48,8 +48,16 @@ impl Aggregate {
 
 impl fmt::Display for Aggregate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let group: Vec<String> = self.group_expr.iter().map(|e| e.to_string()).collect();
-        let agg: Vec<String> = self.aggregate_expr.iter().map(|e| e.to_string()).collect();
+        let group: Vec<String> = self
+            .group_expr
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
+        let agg: Vec<String> = self
+            .aggregate_expr
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         write!(
             f,
             "Aggregate: groupExpr=[{}], aggregateExpr=[{}]",

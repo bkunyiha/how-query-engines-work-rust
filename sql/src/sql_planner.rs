@@ -201,10 +201,10 @@ impl SqlPlanner {
             );
 
             if missing.is_empty() {
-                plan = plan.project(projection_without_aggregates.clone());
+                plan = plan.project(projection_without_aggregates);
                 plan = plan.filter(self.create_logical_expr(selection));
             } else {
-                let mut proj = projection_without_aggregates.clone();
+                let mut proj = projection_without_aggregates;
                 proj.extend(missing.iter().map(|c| LogicalExpr::Column(c.clone())));
                 plan = plan.project(proj);
                 plan = plan.filter(self.create_logical_expr(selection));

@@ -154,7 +154,7 @@ fn list_csv_files(path: &str) -> Vec<String> {
     let entries =
         fs::read_dir(path).unwrap_or_else(|e| panic!("cannot read BENCH_PATH '{path}': {e}"));
     let mut out: Vec<String> = entries
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .filter(|name| name.ends_with(".csv"))
         .collect();
@@ -180,7 +180,10 @@ fn print_memory_stats(label: &str) {
         true,
         ProcessRefreshKind::nothing().with_memory(),
     );
-    let process_virtual = sys.process(pid).map(|p| p.virtual_memory()).unwrap_or(0);
+    let process_virtual = sys
+        .process(pid)
+        .map(sysinfo::Process::virtual_memory)
+        .unwrap_or(0);
     println!(
         "[{label}] maxMemory={} totalMemory={} freeMemory={}",
         sys.total_memory(),

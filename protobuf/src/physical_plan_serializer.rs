@@ -141,7 +141,7 @@ pub fn serialize_physical_plan(plan: &dyn PhysicalPlan) -> pb::PhysicalPlanNode 
             })),
         };
     }
-    panic!("Cannot serialize physical operator to protobuf: {}", plan)
+    panic!("Cannot serialize physical operator to protobuf: {plan}")
 }
 
 /// `&dyn Expression` → `pb::PhysicalExprNode`.
@@ -180,7 +180,7 @@ pub fn serialize_physical_expr(expr: &dyn Expression) -> pb::PhysicalExprNode {
             arrow_type: data_type_to_proto(&c.data_type) as i32,
         }))
     } else {
-        panic!("Cannot serialize physical expression to protobuf: {}", expr)
+        panic!("Cannot serialize physical expression to protobuf: {expr}")
     };
     pb::PhysicalExprNode {
         expr_type: Some(expr_type),
@@ -203,10 +203,7 @@ pub fn serialize_physical_aggr_expr(
     } else if any.is::<physical_plan::CountExpression>() {
         pb::AggregateFunction::Count
     } else {
-        panic!(
-            "Cannot serialize aggregate expression to protobuf: {}",
-            expr
-        )
+        panic!("Cannot serialize aggregate expression to protobuf: {expr}")
     };
     let input = expr.input_expression();
     pb::PhysicalAggregateExprNode {

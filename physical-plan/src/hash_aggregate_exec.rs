@@ -196,8 +196,16 @@ impl PhysicalPlan for HashAggregateExec {
 
 impl fmt::Display for HashAggregateExec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let group: Vec<String> = self.group_expr.iter().map(|e| e.to_string()).collect();
-        let aggr: Vec<String> = self.aggregate_expr.iter().map(|e| e.to_string()).collect();
+        let group: Vec<String> = self
+            .group_expr
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
+        let aggr: Vec<String> = self
+            .aggregate_expr
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         write!(
             f,
             "HashAggregateExec: groupExpr=[{}], aggrExpr=[{}], mode={:?}",

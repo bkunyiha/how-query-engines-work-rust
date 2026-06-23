@@ -185,7 +185,7 @@ mod tests {
             vec![Arc::new(ColumnExpression::new(0))],
         );
         let batches: Vec<_> = proj.execute(&test_ctx()).collect();
-        let rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+        let rows: usize = batches.iter().map(datatypes::RecordBatch::num_rows).sum();
         assert_eq!(rows, 4);
         assert!(batches.iter().all(|b| b.num_columns() == 1));
     }
@@ -227,7 +227,7 @@ mod tests {
         let limited = LimitExec::new(Arc::new(projection), 1);
 
         let batches: Vec<_> = limited.execute(&test_ctx()).collect();
-        let rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+        let rows: usize = batches.iter().map(datatypes::RecordBatch::num_rows).sum();
         assert_eq!(rows, 1);
         assert!(batches.iter().all(|b| b.num_columns() == 1));
     }

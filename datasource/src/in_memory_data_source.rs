@@ -47,10 +47,7 @@ impl DataSource for InMemoryDataSource {
                     .iter()
                     .position(|f| &f.name == name)
                     .unwrap_or_else(|| {
-                        panic!(
-                            "InMemoryDataSource::scan: projection column '{}' not in schema",
-                            name
-                        )
+                        panic!("InMemoryDataSource::scan: projection column '{name}' not in schema")
                     })
             })
             .collect();

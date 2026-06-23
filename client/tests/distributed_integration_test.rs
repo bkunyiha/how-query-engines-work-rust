@@ -143,7 +143,7 @@ fn distributed_aggregate_query_end_to_end_via_flight() {
     //
     // employee.csv has 4 data rows with states: CA, CO, CO, "" (empty)
     // → 3 distinct groups → 3 output rows.
-    let total_output_rows: usize = results.iter().map(|b| b.num_rows()).sum();
+    let total_output_rows: usize = results.iter().map(datatypes::RecordBatch::num_rows).sum();
     assert!(
         !results.is_empty(),
         "expected at least one result batch; got {} batches",

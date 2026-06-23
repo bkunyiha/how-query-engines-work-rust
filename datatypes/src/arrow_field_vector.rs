@@ -101,10 +101,7 @@ impl ColumnVector for ArrowFieldVector {
                 let a = self.field.as_any().downcast_ref::<Date32Array>().unwrap();
                 ScalarValue::Date32(a.value(i))
             }
-            other => panic!(
-                "ArrowFieldVector::get_value: unsupported data type: {:?}",
-                other
-            ),
+            other => panic!("ArrowFieldVector::get_value: unsupported data type: {other:?}"),
         }
     }
 

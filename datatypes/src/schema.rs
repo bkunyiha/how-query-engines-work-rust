@@ -57,7 +57,7 @@ impl Schema {
     /// Convert this `Schema` to arrow-rs's `arrow_schema::Schema`.
     pub fn to_arrow(&self) -> arrow_schema::Schema {
         let arrow_fields: Vec<arrow_schema::Field> =
-            self.fields.iter().map(|f| f.to_arrow()).collect();
+            self.fields.iter().map(Field::to_arrow).collect();
         arrow_schema::Schema::new(arrow_fields)
     }
 

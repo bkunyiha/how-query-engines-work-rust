@@ -166,7 +166,7 @@ mod tests {
         )
         .unwrap();
         let batch2 = RecordBatch::try_new(
-            schema.clone(),
+            schema,
             vec![
                 Arc::new(Int32Array::from(vec![4, 5])),
                 Arc::new(StringArray::from(vec!["d", "e"])),
