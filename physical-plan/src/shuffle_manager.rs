@@ -86,7 +86,7 @@ impl ShuffleManager {
         stage_id: i32,
         partition_id: i32,
     ) -> Box<dyn Iterator<Item = RecordBatch>> {
-        let file_path = self.get_partition_file(job_uuid, stage_id, partition_id);
+        let file_path = self.partition_file(job_uuid, stage_id, partition_id);
         if !file_path.exists() {
             panic!("Shuffle file not found: {}", file_path.display());
         }
@@ -102,7 +102,7 @@ impl ShuffleManager {
     }
 
     /// Path of a shuffle partition file.
-    pub fn get_partition_file(&self, job_uuid: &str, stage_id: i32, partition_id: i32) -> PathBuf {
+    pub fn partition_file(&self, job_uuid: &str, stage_id: i32, partition_id: i32) -> PathBuf {
         self.partition_dir(job_uuid, stage_id)
             .join(format!("partition_{partition_id}.arrow"))
     }
@@ -203,7 +203,7 @@ mod tests {
         let mgr = ShuffleManager::new(&base);
         mgr.write_partition("test-job-B", 0, 0, &[]);
         // No file should have been created — `read_partition` panics on missing files.
-        assert!(!mgr.get_partition_file("test-job-B", 0, 0).exists());
+        assert!(!mgr.partition_file("test-job-B", 0, 0).exists());
         mgr.cleanup_all();
     }
 }

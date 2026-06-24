@@ -121,10 +121,10 @@ mod tests {
         assert_eq!(column_count(b), 2);
 
         let name_col = ArrowFieldVector::new(b.column(0).clone());
-        assert_eq!(name_col.get_value(0), ScalarValue::Utf8("a".into()));
+        assert_eq!(name_col.value(0), ScalarValue::Utf8("a".into()));
 
         let id_col = ArrowFieldVector::new(b.column(1).clone());
-        assert_eq!(id_col.get_value(0), ScalarValue::Int32(1));
+        assert_eq!(id_col.value(0), ScalarValue::Int32(1));
     }
 
     #[test]

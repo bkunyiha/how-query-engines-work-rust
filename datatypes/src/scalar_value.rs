@@ -1,6 +1,6 @@
 //! `ScalarValue` — typed enum representing a single cell's value.
 //!
-//! `ColumnVector::get_value(i)` returns a `ScalarValue`. Every variant
+//! `ColumnVector::value(i)` returns a `ScalarValue`. Every variant
 //! corresponds to one of the `DataType`s listed in [`crate::arrow_types`].
 //! A typed enum (rather than a type-erased `Box<dyn Any>`) lets the compiler
 //! check that every variant is handled in a `match`.

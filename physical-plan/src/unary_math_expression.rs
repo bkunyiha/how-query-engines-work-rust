@@ -27,16 +27,16 @@ pub trait UnaryMathExpression: Expression {
     /// each non-null value through `apply`, producing a `Float64` column.
     fn evaluate_unary(&self, input: &RecordBatch) -> Box<dyn ColumnVector> {
         let n = self.input().evaluate(input);
-        let mut builder = ArrowVectorBuilder::new(&DOUBLE_TYPE, n.size());
-        for i in 0..n.size() {
-            let value = n.get_value(i);
+        let mut builder = ArrowVectorBuilder::new(&DOUBLE_TYPE, n.len());
+        for i in 0..n.len() {
+            let value = n.value(i);
             if value.is_null() {
                 builder.append_null();
             } else {
                 builder.append_value(&ScalarValue::Float64(self.apply(number_to_f64(&value))));
             }
         }
-        builder.set_value_count(n.size());
+        builder.set_value_count(n.len());
         Box::new(builder.build())
     }
 }

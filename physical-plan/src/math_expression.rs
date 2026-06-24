@@ -52,13 +52,13 @@ pub(crate) fn math_evaluate_pair<M: MathExpression + ?Sized>(
     l: &dyn ColumnVector,
     r: &dyn ColumnVector,
 ) -> Box<dyn ColumnVector> {
-    let arrow_type = l.get_type();
-    let mut builder = ArrowVectorBuilder::new(&arrow_type, l.size());
-    for i in 0..l.size() {
-        let value = m.evaluate_cell(&l.get_value(i), &r.get_value(i), &arrow_type);
+    let arrow_type = l.data_type();
+    let mut builder = ArrowVectorBuilder::new(&arrow_type, l.len());
+    for i in 0..l.len() {
+        let value = m.evaluate_cell(&l.value(i), &r.value(i), &arrow_type);
         builder.append_value(&value);
     }
-    builder.set_value_count(l.size());
+    builder.set_value_count(l.len());
     Box::new(builder.build())
 }
 

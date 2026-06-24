@@ -106,12 +106,12 @@ impl HashJoinExec {
 
     /// The join key for one row: the values of the given key columns.
     fn key_of(cols: &[ArrowFieldVector], keys: &[usize], row: usize) -> RowKey {
-        RowKey(keys.iter().map(|&k| cols[k].get_value(row)).collect())
+        RowKey(keys.iter().map(|&k| cols[k].value(row)).collect())
     }
 
     /// Every column value for one row.
     fn full_row(cols: &[ArrowFieldVector], row: usize) -> Vec<ScalarValue> {
-        cols.iter().map(|c| c.get_value(row)).collect()
+        cols.iter().map(|c| c.value(row)).collect()
     }
 }
 
@@ -360,17 +360,17 @@ mod tests {
             let c1 = record_batch::field(b, 1);
             let c2 = record_batch::field(b, 2);
             for i in 0..b.num_rows() {
-                let id = match c0.get_value(i) {
+                let id = match c0.value(i) {
                     ScalarValue::Int64(n) => Some(n),
                     ScalarValue::Null => None,
                     o => panic!("id: {o:?}"),
                 };
-                let name = match c1.get_value(i) {
+                let name = match c1.value(i) {
                     ScalarValue::Utf8(s) => Some(s),
                     ScalarValue::Null => None,
                     o => panic!("name: {o:?}"),
                 };
-                let dept = match c2.get_value(i) {
+                let dept = match c2.value(i) {
                     ScalarValue::Utf8(s) => Some(s),
                     ScalarValue::Null => None,
                     o => panic!("dept: {o:?}"),

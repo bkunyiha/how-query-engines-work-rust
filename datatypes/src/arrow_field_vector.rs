@@ -7,7 +7,7 @@
 //!   directly; the construction layer lives in
 //!   [`crate::arrow_vector_builder`].
 //! - **`ArrowFieldVector`** wraps `arrow_array::ArrayRef` (= `Arc<dyn Array>`).
-//!   The `get_type`/`get_value`/`size` methods dispatch on the underlying
+//!   The `data_type`/`value`/`len` methods dispatch on the underlying
 //!   Arrow type via `array.as_any().downcast_ref::<...>()`.
 
 use crate::{column_vector::ColumnVector, scalar_value::ScalarValue};
@@ -32,13 +32,13 @@ impl ArrowFieldVector {
 }
 
 impl ColumnVector for ArrowFieldVector {
-    fn get_type(&self) -> DataType {
+    fn data_type(&self) -> DataType {
         // arrow-rs's `Array` trait carries the data type directly — no
         // dispatch on the concrete vector type is needed.
         self.field.data_type().clone()
     }
 
-    fn get_value(&self, i: usize) -> ScalarValue {
+    fn value(&self, i: usize) -> ScalarValue {
         if self.field.is_null(i) {
             return ScalarValue::Null;
         }
@@ -101,11 +101,11 @@ impl ColumnVector for ArrowFieldVector {
                 let a = self.field.as_any().downcast_ref::<Date32Array>().unwrap();
                 ScalarValue::Date32(a.value(i))
             }
-            other => panic!("ArrowFieldVector::get_value: unsupported data type: {other:?}"),
+            other => panic!("ArrowFieldVector::value: unsupported data type: {other:?}"),
         }
     }
 
-    fn size(&self) -> usize {
+    fn len(&self) -> usize {
         self.field.len()
     }
 }
@@ -119,33 +119,33 @@ mod tests {
     fn int32_round_trip() {
         let arr: ArrayRef = Arc::new(Int32Array::from(vec![1, 2, 3]));
         let v = ArrowFieldVector::new(arr);
-        assert_eq!(v.size(), 3);
-        assert_eq!(v.get_type(), DataType::Int32);
-        assert_eq!(v.get_value(0), ScalarValue::Int32(1));
-        assert_eq!(v.get_value(2), ScalarValue::Int32(3));
+        assert_eq!(v.len(), 3);
+        assert_eq!(v.data_type(), DataType::Int32);
+        assert_eq!(v.value(0), ScalarValue::Int32(1));
+        assert_eq!(v.value(2), ScalarValue::Int32(3));
     }
 
     #[test]
     fn nullability_returns_scalar_null() {
         let arr: ArrayRef = Arc::new(Int32Array::from(vec![Some(7), None, Some(9)]));
         let v = ArrowFieldVector::new(arr);
-        assert_eq!(v.get_value(0), ScalarValue::Int32(7));
-        assert_eq!(v.get_value(1), ScalarValue::Null);
-        assert_eq!(v.get_value(2), ScalarValue::Int32(9));
+        assert_eq!(v.value(0), ScalarValue::Int32(7));
+        assert_eq!(v.value(1), ScalarValue::Null);
+        assert_eq!(v.value(2), ScalarValue::Int32(9));
     }
 
     #[test]
     fn utf8_round_trip() {
         let arr: ArrayRef = Arc::new(StringArray::from(vec!["a", "bb", "ccc"]));
         let v = ArrowFieldVector::new(arr);
-        assert_eq!(v.get_value(1), ScalarValue::Utf8("bb".to_string()));
+        assert_eq!(v.value(1), ScalarValue::Utf8("bb".to_string()));
     }
 
     #[test]
     fn boolean_round_trip() {
         let arr: ArrayRef = Arc::new(BooleanArray::from(vec![true, false, true]));
         let v = ArrowFieldVector::new(arr);
-        assert_eq!(v.get_value(0), ScalarValue::Boolean(true));
-        assert_eq!(v.get_value(1), ScalarValue::Boolean(false));
+        assert_eq!(v.value(0), ScalarValue::Boolean(true));
+        assert_eq!(v.value(1), ScalarValue::Boolean(false));
     }
 }

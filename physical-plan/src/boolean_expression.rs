@@ -68,23 +68,23 @@ pub trait BooleanExpression: Expression {
     fn evaluate_boolean(&self, input: &RecordBatch) -> Box<dyn ColumnVector> {
         let ll = self.left().evaluate(input);
         let rr = self.right().evaluate(input);
-        assert_eq!(ll.size(), rr.size());
-        if ll.get_type() != rr.get_type() {
+        assert_eq!(ll.len(), rr.len());
+        if ll.data_type() != rr.data_type() {
             panic!(
                 "Cannot compare values of different type: {:?} != {:?}",
-                ll.get_type(),
-                rr.get_type()
+                ll.data_type(),
+                rr.data_type()
             );
         }
-        let arrow_type = ll.get_type();
-        let mut builder = ArrowVectorBuilder::new(&BOOLEAN_TYPE, ll.size());
-        for i in 0..ll.size() {
-            match self.compare_value(&ll.get_value(i), &rr.get_value(i), &arrow_type) {
+        let arrow_type = ll.data_type();
+        let mut builder = ArrowVectorBuilder::new(&BOOLEAN_TYPE, ll.len());
+        for i in 0..ll.len() {
+            match self.compare_value(&ll.value(i), &rr.value(i), &arrow_type) {
                 Some(b) => builder.append_value(&ScalarValue::Boolean(b)),
                 None => builder.append_value(&ScalarValue::Null), // SQL UNKNOWN → null cell
             }
         }
-        builder.set_value_count(ll.size());
+        builder.set_value_count(ll.len());
         Box::new(builder.build())
     }
 }
@@ -384,9 +384,9 @@ mod tests {
             Arc::new(Int8Array::from(b.clone())),
         );
         let result = gteq(&batch);
-        assert_eq!(result.size(), a.len());
-        for i in 0..result.size() {
-            assert_eq!(result.get_value(i), ScalarValue::Boolean(a[i] >= b[i]));
+        assert_eq!(result.len(), a.len());
+        for i in 0..result.len() {
+            assert_eq!(result.value(i), ScalarValue::Boolean(a[i] >= b[i]));
         }
     }
 
@@ -400,9 +400,9 @@ mod tests {
             Arc::new(Int16Array::from(b.clone())),
         );
         let result = gteq(&batch);
-        assert_eq!(result.size(), a.len());
-        for i in 0..result.size() {
-            assert_eq!(result.get_value(i), ScalarValue::Boolean(a[i] >= b[i]));
+        assert_eq!(result.len(), a.len());
+        for i in 0..result.len() {
+            assert_eq!(result.value(i), ScalarValue::Boolean(a[i] >= b[i]));
         }
     }
 
@@ -416,9 +416,9 @@ mod tests {
             Arc::new(Int32Array::from(b.clone())),
         );
         let result = gteq(&batch);
-        assert_eq!(result.size(), a.len());
-        for i in 0..result.size() {
-            assert_eq!(result.get_value(i), ScalarValue::Boolean(a[i] >= b[i]));
+        assert_eq!(result.len(), a.len());
+        for i in 0..result.len() {
+            assert_eq!(result.value(i), ScalarValue::Boolean(a[i] >= b[i]));
         }
     }
 
@@ -432,9 +432,9 @@ mod tests {
             Arc::new(Int64Array::from(b.clone())),
         );
         let result = gteq(&batch);
-        assert_eq!(result.size(), a.len());
-        for i in 0..result.size() {
-            assert_eq!(result.get_value(i), ScalarValue::Boolean(a[i] >= b[i]));
+        assert_eq!(result.len(), a.len());
+        for i in 0..result.len() {
+            assert_eq!(result.value(i), ScalarValue::Boolean(a[i] >= b[i]));
         }
     }
 
@@ -450,9 +450,9 @@ mod tests {
             Arc::new(Float64Array::from(b.clone())),
         );
         let result = gteq(&batch);
-        assert_eq!(result.size(), a.len());
-        for i in 0..result.size() {
-            assert_eq!(result.get_value(i), ScalarValue::Boolean(a[i] >= b[i]));
+        assert_eq!(result.len(), a.len());
+        for i in 0..result.len() {
+            assert_eq!(result.value(i), ScalarValue::Boolean(a[i] >= b[i]));
         }
     }
 
@@ -476,9 +476,9 @@ mod tests {
             Arc::new(LiteralStringExpression::new("CO".to_string())),
         );
         let result = expr.evaluate(&batch);
-        assert_eq!(result.get_value(0), ScalarValue::Boolean(true)); // "CO" == "CO"
-        assert_eq!(result.get_value(1), ScalarValue::Null); // NULL = 'CO' -> UNKNOWN
-        assert_eq!(result.get_value(2), ScalarValue::Boolean(false)); // "CA" != "CO"
+        assert_eq!(result.value(0), ScalarValue::Boolean(true)); // "CO" == "CO"
+        assert_eq!(result.value(1), ScalarValue::Null); // NULL = 'CO' -> UNKNOWN
+        assert_eq!(result.value(2), ScalarValue::Boolean(false)); // "CA" != "CO"
     }
 
     #[test]
@@ -501,9 +501,9 @@ mod tests {
             Arc::new(LiteralStringExpression::new("CO".to_string())),
         );
         let result = expr.evaluate(&batch);
-        assert_eq!(result.get_value(0), ScalarValue::Boolean(false)); // "CO" != "CO"
-        assert_eq!(result.get_value(1), ScalarValue::Null); // NULL != 'CO' -> UNKNOWN
-        assert_eq!(result.get_value(2), ScalarValue::Boolean(true)); // "CA" != "CO"
+        assert_eq!(result.value(0), ScalarValue::Boolean(false)); // "CO" != "CO"
+        assert_eq!(result.value(1), ScalarValue::Null); // NULL != 'CO' -> UNKNOWN
+        assert_eq!(result.value(2), ScalarValue::Boolean(true)); // "CA" != "CO"
     }
 
     #[test]
@@ -529,9 +529,9 @@ mod tests {
             Arc::new(ColumnExpression::new(1)),
         )
         .evaluate(&batch);
-        assert_eq!(result.get_value(0), ScalarValue::Boolean(false)); // 5 > 10
-        assert_eq!(result.get_value(1), ScalarValue::Null); // NULL > 10 -> UNKNOWN
-        assert_eq!(result.get_value(2), ScalarValue::Boolean(true)); // 20 > 10
+        assert_eq!(result.value(0), ScalarValue::Boolean(false)); // 5 > 10
+        assert_eq!(result.value(1), ScalarValue::Null); // NULL > 10 -> UNKNOWN
+        assert_eq!(result.value(2), ScalarValue::Boolean(true)); // 20 > 10
     }
 
     #[test]
@@ -559,9 +559,9 @@ mod tests {
             Arc::new(StringArray::from(b.clone())),
         );
         let result = gteq(&batch);
-        assert_eq!(result.size(), a.len());
-        for i in 0..result.size() {
-            assert_eq!(result.get_value(i), ScalarValue::Boolean(a[i] >= b[i]));
+        assert_eq!(result.len(), a.len());
+        for i in 0..result.len() {
+            assert_eq!(result.value(i), ScalarValue::Boolean(a[i] >= b[i]));
         }
     }
 }

@@ -189,7 +189,7 @@ impl ArrowVectorBuilder {
 mod tests {
     use super::*;
     use crate::arrow_types::{INT32_TYPE, STRING_TYPE};
-    use crate::column_vector::ColumnVector; // for v.size() / v.get_value()
+    use crate::column_vector::ColumnVector; // for v.len() / v.value()
 
     /// Constructs an `Int32` vector by populating it 0..10 via
     /// `append_value`, then asserts size==10 and each value matches its
@@ -201,9 +201,9 @@ mod tests {
             b.append_value(&ScalarValue::Int32(i));
         }
         let v = b.build();
-        assert_eq!(v.size(), 10);
-        for i in 0..v.size() {
-            assert_eq!(v.get_value(i), ScalarValue::Int32(i as i32));
+        assert_eq!(v.len(), 10);
+        for i in 0..v.len() {
+            assert_eq!(v.value(i), ScalarValue::Int32(i as i32));
         }
     }
 
@@ -214,10 +214,10 @@ mod tests {
         b.append_null();
         b.append_value(&ScalarValue::Utf8("world".to_string()));
         let v = b.build();
-        assert_eq!(v.size(), 3);
-        assert_eq!(v.get_value(0), ScalarValue::Utf8("hello".to_string()));
-        assert_eq!(v.get_value(1), ScalarValue::Null);
-        assert_eq!(v.get_value(2), ScalarValue::Utf8("world".to_string()));
+        assert_eq!(v.len(), 3);
+        assert_eq!(v.value(0), ScalarValue::Utf8("hello".to_string()));
+        assert_eq!(v.value(1), ScalarValue::Null);
+        assert_eq!(v.value(2), ScalarValue::Utf8("world".to_string()));
     }
 
     #[test]

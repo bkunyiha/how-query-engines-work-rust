@@ -69,12 +69,12 @@ fn main() {
 fn print_results(batches: &[RecordBatch]) {
     for batch in batches {
         // Wrap each column once with ArrowFieldVector so we can use the
-        // `ColumnVector::get_value(row)` API — same pattern `to_csv` uses.
+        // `ColumnVector::value(row)` API — same pattern `to_csv` uses.
         let state_col = ArrowFieldVector::new(batch.column(0).clone());
         let sum_col = ArrowFieldVector::new(batch.column(1).clone());
         for row in 0..batch.num_rows() {
-            let key = scalar_to_string(&state_col.get_value(row));
-            let value = sum_col.get_value(row);
+            let key = scalar_to_string(&state_col.value(row));
+            let value = sum_col.value(row);
             println!("  {key}: {value:?}");
         }
     }
@@ -90,8 +90,8 @@ fn extract_results(batches: &[RecordBatch]) -> HashMap<String, ScalarValue> {
         let state_col = ArrowFieldVector::new(batch.column(0).clone());
         let sum_col = ArrowFieldVector::new(batch.column(1).clone());
         for row in 0..batch.num_rows() {
-            let key = scalar_to_string(&state_col.get_value(row));
-            let value = sum_col.get_value(row);
+            let key = scalar_to_string(&state_col.value(row));
+            let value = sum_col.value(row);
             out.insert(key, value);
         }
     }

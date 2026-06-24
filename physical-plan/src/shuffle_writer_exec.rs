@@ -162,7 +162,7 @@ fn compute_targets(
 ) -> Vec<usize> {
     let mut targets = Vec::with_capacity(row_count);
     for row in 0..row_count {
-        let key: Vec<ScalarValue> = key_columns.iter().map(|c| c.get_value(row)).collect();
+        let key: Vec<ScalarValue> = key_columns.iter().map(|c| c.value(row)).collect();
         let mut hasher = DefaultHasher::new();
         RowKey(key).hash(&mut hasher);
         targets.push((hasher.finish() % partition_count as u64) as usize);
@@ -179,10 +179,10 @@ fn select_rows(batch: &RecordBatch, schema: &Schema, take: &[bool]) -> RecordBat
     let columns: Vec<Box<dyn ColumnVector>> = (0..batch.num_columns())
         .map(|col_idx| {
             let source = record_batch::field(batch, col_idx);
-            let mut builder = ArrowVectorBuilder::new(&source.get_type(), count);
+            let mut builder = ArrowVectorBuilder::new(&source.data_type(), count);
             for (row, &t) in take.iter().enumerate() {
                 if t {
-                    builder.append_value(&source.get_value(row));
+                    builder.append_value(&source.value(row));
                 }
             }
             builder.set_value_count(count);
@@ -413,7 +413,7 @@ mod tests {
         // ShuffleManager::write_partition isn't even reached — we don't call
         // it for empty buffers).
         for partition_id in 0..3 {
-            let path = ctx.shuffle_manager.get_partition_file(
+            let path = ctx.shuffle_manager.partition_file(
                 "test-job-shuffle-writer-empty",
                 0,
                 partition_id,

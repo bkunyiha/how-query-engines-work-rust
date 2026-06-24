@@ -45,7 +45,7 @@ impl SqlPlanner {
             .collect();
 
         // columns referenced in the projection
-        let column_names_in_projection = get_referenced_columns(&projection_expr);
+        let column_names_in_projection = referenced_columns(&projection_expr);
 
         let aggregate_expr_count = projection_expr
             .iter()
@@ -56,7 +56,7 @@ impl SqlPlanner {
         }
 
         // does the filter reference anything not in the final projection?
-        let column_names_in_selection = self.get_columns_referenced_by_selection(select, &table);
+        let column_names_in_selection = self.columns_referenced_by_selection(select, &table);
 
         if aggregate_expr_count == 0 {
             return self.plan_non_aggregate_query(
@@ -188,7 +188,7 @@ impl SqlPlanner {
 
         if let Some(selection) = &select.selection {
             let column_names_in_projection_without_aggregates =
-                get_referenced_columns(&projection_without_aggregates);
+                referenced_columns(&projection_without_aggregates);
 
             // columns needed by the selection AND by the aggregate expressions
             let mut all_required_columns = column_names_in_projection_without_aggregates.clone();
@@ -219,7 +219,7 @@ impl SqlPlanner {
         plan.aggregate(group_by_expr, aggregate_expr)
     }
 
-    fn get_columns_referenced_by_selection(
+    fn columns_referenced_by_selection(
         &self,
         select: &SqlSelect,
         table: &DataFrame,
@@ -365,7 +365,7 @@ fn is_aggregate_expr(expr: &LogicalExpr) -> bool {
 
 /// Collect the column names referenced by a list of expressions, in first-seen
 /// order.
-fn get_referenced_columns(exprs: &[LogicalExpr]) -> Vec<String> {
+fn referenced_columns(exprs: &[LogicalExpr]) -> Vec<String> {
     let mut accumulator = Vec::new();
     for e in exprs {
         visit(e, &mut accumulator);

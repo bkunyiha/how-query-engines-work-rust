@@ -83,16 +83,16 @@ impl std::fmt::Display for SelectionExec {
 fn filter(v: &dyn ColumnVector, selection: &dyn ColumnVector) -> Box<dyn ColumnVector> {
     // Count selected rows first, to size the builder.
     let mut count = 0usize;
-    for i in 0..selection.size() {
-        if matches!(selection.get_value(i), ScalarValue::Boolean(true)) {
+    for i in 0..selection.len() {
+        if matches!(selection.value(i), ScalarValue::Boolean(true)) {
             count += 1;
         }
     }
 
-    let mut builder = ArrowVectorBuilder::new(&v.get_type(), count);
-    for i in 0..selection.size() {
-        if matches!(selection.get_value(i), ScalarValue::Boolean(true)) {
-            builder.append_value(&v.get_value(i));
+    let mut builder = ArrowVectorBuilder::new(&v.data_type(), count);
+    for i in 0..selection.len() {
+        if matches!(selection.value(i), ScalarValue::Boolean(true)) {
+            builder.append_value(&v.value(i));
         }
     }
     builder.set_value_count(count);

@@ -124,7 +124,7 @@ mod tests {
         // Expected `id` sequence in the alltypes_plain fixture is 4,5,6,7,2,3,0,1.
         let expected: Vec<i32> = vec![4, 5, 6, 7, 2, 3, 0, 1];
         for (i, want) in expected.iter().enumerate() {
-            assert_eq!(id_col.get_value(i), ScalarValue::Int32(*want));
+            assert_eq!(id_col.value(i), ScalarValue::Int32(*want));
         }
     }
 
@@ -137,8 +137,8 @@ mod tests {
         assert_eq!(batch.num_columns(), 1);
         let col = ArrowFieldVector::new(batch.column(0).clone());
         // All values should be non-null.
-        for i in 0..col.size() {
-            assert!(!col.get_value(i).is_null(), "string at index {i} is null");
+        for i in 0..col.len() {
+            assert!(!col.value(i).is_null(), "string at index {i} is null");
         }
     }
 }

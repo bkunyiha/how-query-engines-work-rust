@@ -82,10 +82,10 @@ fn date_interval(
 ) -> Box<dyn ColumnVector> {
     let date_col: Box<dyn ColumnVector> = date_expr.evaluate(input);
     let interval_col: Box<dyn ColumnVector> = interval_expr.evaluate(input);
-    let mut builder = ArrowVectorBuilder::new(&DATE_DAY_TYPE, date_col.size());
-    for i in 0..date_col.size() {
-        let date_value = date_col.get_value(i);
-        let interval_value = interval_col.get_value(i);
+    let mut builder = ArrowVectorBuilder::new(&DATE_DAY_TYPE, date_col.len());
+    for i in 0..date_col.len() {
+        let date_value = date_col.value(i);
+        let interval_value = interval_col.value(i);
         if date_value.is_null() || interval_value.is_null() {
             builder.append_null();
         } else {
@@ -94,6 +94,6 @@ fn date_interval(
             builder.append_value(&ScalarValue::Date32(op(date_days, interval_days)));
         }
     }
-    builder.set_value_count(date_col.size());
+    builder.set_value_count(date_col.len());
     Box::new(builder.build())
 }

@@ -139,7 +139,7 @@ impl PhysicalPlan for HashAggregateExec {
                 .collect();
 
             for row in 0..batch.num_rows() {
-                let key = GroupKey(group_keys.iter().map(|c| c.get_value(row)).collect());
+                let key = GroupKey(group_keys.iter().map(|c| c.value(row)).collect());
                 let accumulators = map.entry(key).or_insert_with(|| {
                     self.aggregate_expr
                         .iter()
@@ -147,7 +147,7 @@ impl PhysicalPlan for HashAggregateExec {
                         .collect()
                 });
                 for (i, acc) in accumulators.iter_mut().enumerate() {
-                    let value = aggr_inputs[i].get_value(row);
+                    let value = aggr_inputs[i].value(row);
                     match self.mode {
                         // FINAL merges incoming partial state; other modes accumulate raw values.
                         AggregateMode::Final => acc.merge(&AccumulatorValue::Scalar(value)),
@@ -368,20 +368,20 @@ mod tests {
 
         let mut got: HashMap<Option<String>, (i64, i64, i32)> = HashMap::new();
         for i in 0..batch.num_rows() {
-            let state = match states.get_value(i) {
+            let state = match states.value(i) {
                 ScalarValue::Utf8(s) => Some(s),
                 ScalarValue::Null => None,
                 other => panic!("unexpected state value: {other:?}"),
             };
-            let mn = match mins.get_value(i) {
+            let mn = match mins.value(i) {
                 ScalarValue::Int64(n) => n,
                 o => panic!("min: {o:?}"),
             };
-            let mx = match maxs.get_value(i) {
+            let mx = match maxs.value(i) {
                 ScalarValue::Int64(n) => n,
                 o => panic!("max: {o:?}"),
             };
-            let c = match counts.get_value(i) {
+            let c = match counts.value(i) {
                 ScalarValue::Int32(n) => n,
                 o => panic!("count: {o:?}"),
             };

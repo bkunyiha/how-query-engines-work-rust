@@ -104,7 +104,7 @@ impl SqlTokenizer {
     fn scan_identifier(&self, start: usize) -> Token {
         // Back-quoted identifier: `like this`.
         if self.chars[start] == '`' {
-            let end = self.get_offset_until_terminated_char('`', start + 1);
+            let end = self.offset_until_terminated_char('`', start + 1);
             return Token::new(
                 self.substring(start + 1, end),
                 TokenType::Literal(Literal::Identifier),
@@ -147,7 +147,7 @@ impl SqlTokenizer {
         }
     }
 
-    fn get_offset_until_terminated_char(&self, terminated: char, start: usize) -> usize {
+    fn offset_until_terminated_char(&self, terminated: char, start: usize) -> usize {
         match self.chars[start..].iter().position(|&c| c == terminated) {
             Some(pos) => start + pos,
             None => panic!("Must contain {terminated} in remain sql[{start} .. end]"),

@@ -38,9 +38,9 @@ pub trait BinaryExpression: Expression {
     fn evaluate_binary(&self, input: &RecordBatch) -> Box<dyn ColumnVector> {
         let ll = self.left().evaluate(input);
         let rr = self.right().evaluate(input);
-        assert_eq!(ll.size(), rr.size());
+        assert_eq!(ll.len(), rr.len());
 
-        if ll.get_type() != rr.get_type() {
+        if ll.data_type() != rr.data_type() {
             // Attempt type coercion for numeric types (this fork's extension of
             // the upstream BinaryExpression — the snippet-omitted block).
             let (cl, cr) = coerce_types(ll, rr);
@@ -56,8 +56,8 @@ fn coerce_types(
     ll: Box<dyn ColumnVector>,
     rr: Box<dyn ColumnVector>,
 ) -> (Box<dyn ColumnVector>, Box<dyn ColumnVector>) {
-    let left_type = ll.get_type();
-    let right_type = rr.get_type();
+    let left_type = ll.data_type();
+    let right_type = rr.data_type();
     if is_numeric(&left_type) && is_numeric(&right_type) {
         return (coerce_to_double(ll), coerce_to_double(rr));
     }
@@ -88,7 +88,7 @@ fn is_numeric(t: &DataType) -> bool {
 /// Already `Float64`? Pass it through. Otherwise wrap in a [`CoercedDoubleVector`]
 /// that converts on access.
 fn coerce_to_double(col: Box<dyn ColumnVector>) -> Box<dyn ColumnVector> {
-    if col.get_type() == DataType::Float64 {
+    if col.data_type() == DataType::Float64 {
         col
     } else {
         Box::new(CoercedDoubleVector { inner: col })
@@ -102,12 +102,12 @@ struct CoercedDoubleVector {
 }
 
 impl ColumnVector for CoercedDoubleVector {
-    fn get_type(&self) -> DataType {
+    fn data_type(&self) -> DataType {
         DataType::Float64
     }
 
-    fn get_value(&self, i: usize) -> ScalarValue {
-        match self.inner.get_value(i) {
+    fn value(&self, i: usize) -> ScalarValue {
+        match self.inner.value(i) {
             ScalarValue::Null => ScalarValue::Null,
             ScalarValue::Float64(v) => ScalarValue::Float64(v),
             ScalarValue::Float32(v) => ScalarValue::Float64(v as f64),
@@ -123,7 +123,7 @@ impl ColumnVector for CoercedDoubleVector {
         }
     }
 
-    fn size(&self) -> usize {
-        self.inner.size()
+    fn len(&self) -> usize {
+        self.inner.len()
     }
 }

@@ -30,21 +30,21 @@ impl LiteralValueVector {
 }
 
 impl ColumnVector for LiteralValueVector {
-    fn get_type(&self) -> DataType {
+    fn data_type(&self) -> DataType {
         self.arrow_type.clone()
     }
 
-    fn get_value(&self, i: usize) -> ScalarValue {
+    fn value(&self, i: usize) -> ScalarValue {
         if i >= self.size {
             panic!(
-                "LiteralValueVector::get_value: index {} out of bounds (size {})",
+                "LiteralValueVector::value: index {} out of bounds (size {})",
                 i, self.size
             );
         }
         self.value.clone()
     }
 
-    fn size(&self) -> usize {
+    fn len(&self) -> usize {
         self.size
     }
 }
@@ -57,22 +57,22 @@ mod tests {
     #[test]
     fn literal_returns_value_for_every_index() {
         let v = LiteralValueVector::new(INT32_TYPE, ScalarValue::Int32(42), 5);
-        assert_eq!(v.size(), 5);
+        assert_eq!(v.len(), 5);
         for i in 0..5 {
-            assert_eq!(v.get_value(i), ScalarValue::Int32(42));
+            assert_eq!(v.value(i), ScalarValue::Int32(42));
         }
     }
 
     #[test]
-    fn literal_get_type_matches_constructor_arg() {
+    fn literal_data_type_matches_constructor_arg() {
         let v = LiteralValueVector::new(INT32_TYPE, ScalarValue::Int32(7), 3);
-        assert_eq!(v.get_type(), INT32_TYPE);
+        assert_eq!(v.data_type(), INT32_TYPE);
     }
 
     #[test]
     #[should_panic(expected = "out of bounds")]
     fn literal_index_out_of_bounds_panics() {
         let v = LiteralValueVector::new(INT32_TYPE, ScalarValue::Int32(1), 2);
-        let _ = v.get_value(2);
+        let _ = v.value(2);
     }
 }

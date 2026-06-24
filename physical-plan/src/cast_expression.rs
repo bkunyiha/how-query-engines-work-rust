@@ -27,8 +27,8 @@ impl Expression for CastExpression {
         let value = self.expr.evaluate(input);
         let mut builder = ArrowVectorBuilder::new(&self.data_type, record_batch::row_count(input));
 
-        for i in 0..value.size() {
-            let vv = value.get_value(i);
+        for i in 0..value.len() {
+            let vv = value.value(i);
             if vv.is_null() {
                 builder.append_null();
                 continue;
@@ -46,7 +46,7 @@ impl Expression for CastExpression {
             builder.append_value(&cast);
         }
 
-        builder.set_value_count(value.size());
+        builder.set_value_count(value.len());
         Box::new(builder.build())
     }
 
@@ -176,9 +176,9 @@ mod tests {
         let expr = CastExpression::new(Arc::new(ColumnExpression::new(0)), STRING_TYPE);
         let result = expr.evaluate(&batch);
 
-        assert_eq!(result.size(), a.len());
+        assert_eq!(result.len(), a.len());
         for (i, val) in a.iter().enumerate() {
-            assert_eq!(result.get_value(i), ScalarValue::Utf8(val.to_string()));
+            assert_eq!(result.value(i), ScalarValue::Utf8(val.to_string()));
         }
     }
 
@@ -192,10 +192,10 @@ mod tests {
         let expr = CastExpression::new(Arc::new(ColumnExpression::new(0)), FLOAT_TYPE);
         let result = expr.evaluate(&batch);
 
-        assert_eq!(result.size(), a.len());
+        assert_eq!(result.len(), a.len());
         for (i, val) in a.iter().enumerate() {
             let expected: f32 = val.parse().unwrap();
-            assert_eq!(result.get_value(i), ScalarValue::Float32(expected));
+            assert_eq!(result.value(i), ScalarValue::Float32(expected));
         }
     }
 }

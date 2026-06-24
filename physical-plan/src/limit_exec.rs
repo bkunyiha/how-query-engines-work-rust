@@ -95,9 +95,9 @@ fn truncate(batch: &RecordBatch, n: usize, schema: &Schema) -> RecordBatch {
     let columns: Vec<Box<dyn ColumnVector>> = (0..batch.num_columns())
         .map(|i| {
             let source = record_batch::field(batch, i);
-            let mut builder = ArrowVectorBuilder::new(&source.get_type(), n);
+            let mut builder = ArrowVectorBuilder::new(&source.data_type(), n);
             for row in 0..n {
-                builder.append_value(&source.get_value(row));
+                builder.append_value(&source.value(row));
             }
             builder.set_value_count(n);
             Box::new(builder.build()) as Box<dyn ColumnVector>

@@ -51,9 +51,9 @@ pub fn field(batch: &RecordBatch, i: usize) -> ArrowFieldVector {
 /// materializing every column uniformly. (A future rewrite could fast-path the
 /// already-materialized case via a downcast; this faithful port keeps it simple.)
 pub fn column_to_array(col: &dyn ColumnVector) -> ArrayRef {
-    let mut builder = ArrowVectorBuilder::new(&col.get_type(), col.size());
-    for i in 0..col.size() {
-        builder.append_value(&col.get_value(i));
+    let mut builder = ArrowVectorBuilder::new(&col.data_type(), col.len());
+    for i in 0..col.len() {
+        builder.append_value(&col.value(i));
     }
     builder.build().field
 }
@@ -88,10 +88,10 @@ pub fn to_csv(batch: &RecordBatch) -> String {
                 out.push(',');
             }
             // Wrap each column as an ArrowFieldVector so we can use the
-            // ColumnVector trait's get_value method — same path the rest of
+            // ColumnVector trait's value method — same path the rest of
             // the engine uses.
             let v = ArrowFieldVector::new(batch.column(col_index).clone());
-            let value = v.get_value(row_index);
+            let value = v.value(row_index);
             match value {
                 ScalarValue::Null => out.push_str("null"),
                 ScalarValue::Boolean(b) => out.push_str(&b.to_string()),
@@ -144,9 +144,9 @@ mod tests {
     fn field_by_index_round_trips() {
         let b = sample_batch();
         let id = field(&b, 0);
-        assert_eq!(id.get_value(0), ScalarValue::Int32(1));
+        assert_eq!(id.value(0), ScalarValue::Int32(1));
         let name = field(&b, 1);
-        assert_eq!(name.get_value(2), ScalarValue::Utf8("c".to_string()));
+        assert_eq!(name.value(2), ScalarValue::Utf8("c".to_string()));
     }
 
     #[test]
@@ -174,10 +174,10 @@ mod tests {
 
         assert_eq!(row_count(&batch), 3);
         assert_eq!(column_count(&batch), 2);
-        assert_eq!(field(&batch, 0).get_value(2), ScalarValue::Int32(3));
+        assert_eq!(field(&batch, 0).value(2), ScalarValue::Int32(3));
         // every row of the literal column materialized to 7
         for i in 0..3 {
-            assert_eq!(field(&batch, 1).get_value(i), ScalarValue::Int32(7));
+            assert_eq!(field(&batch, 1).value(i), ScalarValue::Int32(7));
         }
     }
 }

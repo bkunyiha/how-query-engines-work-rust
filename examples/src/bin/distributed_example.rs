@@ -194,8 +194,8 @@ fn print_results(batches: &[RecordBatch]) {
         let state_col = ArrowFieldVector::new(batch.column(0).clone());
         let sum_col = ArrowFieldVector::new(batch.column(1).clone());
         for row in 0..batch.num_rows() {
-            let key = scalar_to_string(&state_col.get_value(row));
-            let value = sum_col.get_value(row);
+            let key = scalar_to_string(&state_col.value(row));
+            let value = sum_col.value(row);
             println!("  {key}: {value:?}");
         }
     }

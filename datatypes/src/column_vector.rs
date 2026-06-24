@@ -15,11 +15,16 @@ use arrow_schema::DataType;
 /// Abstraction over different implementations of a column vector.
 pub trait ColumnVector {
     /// The Arrow data type stored in this column.
-    fn get_type(&self) -> DataType;
+    fn data_type(&self) -> DataType;
 
     /// Fetch one cell by row index. Returns [`ScalarValue::Null`] for null cells.
-    fn get_value(&self, i: usize) -> ScalarValue;
+    fn value(&self, i: usize) -> ScalarValue;
 
     /// Number of rows in this column.
-    fn size(&self) -> usize;
+    fn len(&self) -> usize;
+
+    /// Whether this column has no rows.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
