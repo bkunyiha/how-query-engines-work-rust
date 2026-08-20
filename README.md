@@ -230,6 +230,43 @@ place:
 10. **`flight-server/`** and **`client/`** — Make the cluster real:
     Arrow Flight over tonic gRPC.
 
+## Where to go next
+
+`rquery` is a faithful book port — it stays close to the *How Query
+Engines Work* structure so each chapter maps to a single crate you
+can read alongside the text.
+
+`fdapquery` is `rquery` reshaped to be a **strict shape mirror** of
+Apache DataFusion + Apache Ballista. Same core teaching content,
+same running example query, but the code layout, trait method
+signatures, error types, async surface, and crate boundaries all
+match DataFusion / Ballista upstream byte-for-byte. If you finish
+the book and start reading DataFusion source, `fdapquery` is the
+bridge: every fdapquery type maps to a DataFusion or Ballista type
+you can open side by side.
+
+Notable differences from `rquery`:
+
+- `PhysicalPlan` renamed `ExecutionPlan`; `execute(partition, ctx)`
+  returns an async `SendableRecordBatchStream` instead of a sync
+  iterator.
+- `DistributedContext` is gone — distributed execution is a
+  property of `SessionContext::standalone()` via a
+  `SessionContextExt` extension trait, mirroring how Ballista
+  extends DataFusion's `SessionContext`.
+- `ExecutorContext` split into `TaskContext` + `RuntimeEnv` (mirror
+  of DataFusion's split).
+- Every fallible path returns `Result<T, FdapQueryError>` — no
+  `unwrap()` / `panic!` in the query path.
+- Hand-rolled SQL parser replaced with `sqlparser-rs` (the same
+  crate DataFusion uses).
+- Three-crate catalog split (`TableSource` + `TableProvider` +
+  `DataSource`) matching DataFusion's shape.
+
+Read `rquery` first for the book. Read `fdapquery` second if you
+want to see how the same engine composes with the wider Rust
+analytical-database ecosystem.
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE).
